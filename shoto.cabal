@@ -1,0 +1,30 @@
+cabal-version:      3.14
+name:               shoto
+version:            0.0.0.1
+synopsis:           jit compile based deep learning framework
+license:            MIT
+license-file:       LICENSE
+author:             Hikaru KONDO
+maintainer:         mushin.hudoushin@gmail.com
+category:           Deep Learning
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+common warnings
+    ghc-options: -Wall
+library
+    import:           warnings
+    exposed-modules:  Shoto
+    build-depends:    base ^>=4.19.1.0
+    hs-source-dirs:   src
+    default-language: Haskell2010
+
+test-suite shoto-test
+    import:           warnings
+    default-language: Haskell2010
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base ^>=4.19.1.0,
+        HUnit >=1.6.2.0,
+        shoto
