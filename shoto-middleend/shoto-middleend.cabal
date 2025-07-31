@@ -1,0 +1,19 @@
+cabal-version:      3.14
+name:               shoto-middleend
+version:            0.0.0.1
+synopsis:           Frontend IR to Tinygrad-like opset converter
+license:            MIT
+license-file:       ../LICENSE
+author:             Hikaru KONDO
+maintainer:         mushin.hudoushin@gmail.com
+category:           Compilers
+build-type:         Simple
+
+library
+    exposed-modules: Shoto.Middleend
+    build-depends:   
+        base >=4.19.1.0,
+        shoto-frontend
+    hs-source-dirs:  src
+    default-language: GHC2024
+    ghc-options:     -Wall

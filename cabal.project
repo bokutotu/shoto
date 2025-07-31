@@ -1,0 +1,15 @@
+packages:
+  shoto-frontend/
+  shoto-middleend/
+  shoto-backend/
+  shoto-codegen/
+  shoto-exe/
+
+
+optimization: 0
+documentation: False
+
+write-ghc-environment-files: always
+
+tests: True
+benchmarks: True

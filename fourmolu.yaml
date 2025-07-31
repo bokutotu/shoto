@@ -1,0 +1,5 @@
+comma-style: leading
+import-export-comma-style: leading
+respectful: false
+indentation: 4
+column-limit: 100
