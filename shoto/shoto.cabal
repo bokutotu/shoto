@@ -16,6 +16,7 @@ library
     ghc-options:      -Wall
     build-depends:
         base >=4.19.1.0,
+        process,
         shoto-backend,
         shoto-codegen,
         shoto-frontend,
@@ -32,4 +33,5 @@ test-suite shoto-test
     build-depends:
         base,
         hspec,
+        process,
         shoto

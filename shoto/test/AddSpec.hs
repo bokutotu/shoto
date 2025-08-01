@@ -1,12 +1,33 @@
 module AddSpec where
 
+import           Data.List      (isInfixOf)
 import           Shoto
+import           System.Exit    (ExitCode (..))
+import           System.Process (readProcessWithExitCode)
 import           Test.Hspec
+
+checkSymbols :: FilePath -> IO [String]
+checkSymbols soPath = do
+    (exitCode, stdout, stderr) <- readProcessWithExitCode "nm" ["-D", soPath] ""
+    case exitCode of
+        ExitSuccess -> return $ lines stdout
+        _ -> error $ "nm failed" ++ stderr
+
+hasFunction :: FilePath -> String -> IO Bool
+hasFunction soPath funcName = any (isInfixOf funcName) <$> checkSymbols soPath
 
 spec :: Spec
 spec = describe "Shoto Compiler Add Test" $ do
     it "generate Add Kenel" $ do
         compile `shouldBe` expectedCode
+    it "codegen and comple" $ do
+        let code = compile
+            fileName = "/tmp/add.cu"
+            libName = "/tmp/add.so"
+        toCuda code fileName
+        nvcc libName fileName
+        hasAdd <- hasFunction libName "add"
+        hasAdd `shouldBe` True
   where
     expectedCode =
         [ "#include <cuda_runtime.h>"

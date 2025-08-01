@@ -1,4 +1,6 @@
-module Shoto (compile) where
+module Shoto (compile, toCuda, nvcc) where
+
+import           System.Process (callProcess)
 
 --
 compile :: [String]
@@ -15,3 +17,9 @@ compile =
     , "  cudaDeviceSynchronize();"
     , "}"
     ]
+
+toCuda :: [String] -> String -> IO ()
+toCuda code path = writeFile path (unlines code)
+
+nvcc :: String -> String -> IO ()
+nvcc soPath cudaPath = callProcess "nvcc" ["-Xcompiler", "-fPIC", "-shared", "-o", soPath, cudaPath]

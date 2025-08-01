@@ -45,7 +45,23 @@
             fourmolu               = {};
             hspec-discover         = {};
           };
-          buildInputs = [ pkgs.git ];
+          buildInputs = [ 
+            pkgs.git
+          ];
+          
+          # システムのCUDAを使用
+          shellHook = ''
+            echo "Using system CUDA installation"
+            echo "Make sure CUDA is installed on your system"
+            
+            # 基本的な環境変数チェック
+            if command -v nvcc &> /dev/null; then
+              echo "✓ nvcc found at: $(which nvcc)"
+              echo "  CUDA version: $(nvcc --version | grep release | awk '{print $6}')"
+            else
+              echo "✗ nvcc not found. Please install CUDA."
+            fi
+          '';
         };
       });
 }
