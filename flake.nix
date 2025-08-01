@@ -34,8 +34,6 @@
         };
 
       in {
-        packages.default = project.flake {}.packages."shoto-exe:exe:shoto";
-        
         devShells.default = project.shellFor {
           tools = {
             haskell-language-server = {};

@@ -1,9 +1,9 @@
 packages:
+  shoto/
   shoto-frontend/
   shoto-middleend/
   shoto-backend/
   shoto-codegen/
-  shoto-exe/
 
 
 optimization: 0
