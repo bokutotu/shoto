@@ -30,7 +30,7 @@ test-suite shoto-test
     main-is:            Spec.hs
     build-tool-depends: hspec-discover:hspec-discover
     hs-source-dirs:     test
-    other-modules:      AddSpec
+    other-modules:      ArithmeticSpec
     default-language:   GHC2024
     extra-libraries:    cudart
     ghc-options:        -Wall
