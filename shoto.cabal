@@ -2,7 +2,7 @@ cabal-version: 3.14
 name:          shoto
 version:       0.0.0.1
 license:       MIT
-license-file:  ../LICENSE
+license-file:  LICENSE
 maintainer:    mushin.hudoushin@gmail.com
 author:        Hikaru KONDO
 synopsis:      Shoto polyhedral compiler executable
@@ -18,11 +18,7 @@ library
     build-depends:
         base >=4.19.1.0,
         process,
-        unix,
-        shoto-backend,
-        shoto-codegen,
-        shoto-frontend,
-        shoto-middleend
+        unix
     extra-libraries:  cudart
 
 test-suite shoto-test
