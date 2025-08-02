@@ -37,8 +37,8 @@ spec = describe "Shoto Compiler Add Test" $ do
             ir = Add a b
         compile ir `shouldBe` expectedCode
     it "codegen and comple" $ do
-        let aT = Tensor (Shape [1]) (Shape [1])
-            bT = Tensor (Shape [1]) (Shape [1])
+        let aT = Tensor (Shape [2]) (Shape [1])
+            bT = Tensor (Shape [2]) (Shape [1])
             ir = Add aT bT
             code = compile ir
             fileName = "/tmp/add.cu"
@@ -47,9 +47,9 @@ spec = describe "Shoto Compiler Add Test" $ do
         nvcc libName fileName
         hasAdd <- hasFunction libName "add"
         hasAdd `shouldBe` True
-        let a = [1.0] :: [CFloat]
-            b = [2.0] :: [CFloat]
-            c = [0.0] :: [CFloat]
+        let a = [1.0, 2.0] :: [CFloat]
+            b = [2.0, 4.0] :: [CFloat]
+            c = [0.0, 1.0] :: [CFloat]
         aGpu <- copyToGpu a
         bGpu <- copyToGpu b
         cGpu <- copyToGpu c
@@ -60,7 +60,7 @@ spec = describe "Shoto Compiler Add Test" $ do
                     withForeignPtr (ptr cGpu) $ \cPtr ->
                         add aPtr bPtr cPtr
         cCpu <- copyToCpu cGpu
-        cCpu `shouldBe` [3]
+        cCpu `shouldBe` [3.0, 6.0]
   where
     expectedCode =
         [ "#include <cuda_runtime.h>"
