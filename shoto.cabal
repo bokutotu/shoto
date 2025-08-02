@@ -10,16 +10,20 @@ category:      Compilers
 build-type:    Simple
 
 library
-    exposed-modules:  Shoto
-                      Runtime
+    exposed-modules:
+        FrontendIR
+        Runtime
+        Shoto
+        Tensor
+
     hs-source-dirs:   src
     default-language: GHC2024
+    extra-libraries:  cudart
     ghc-options:      -Wall
     build-depends:
         base >=4.19.1.0,
         process,
         unix
-    extra-libraries:  cudart
 
 test-suite shoto-test
     type:               exitcode-stdio-1.0
@@ -28,10 +32,10 @@ test-suite shoto-test
     hs-source-dirs:     test
     other-modules:      AddSpec
     default-language:   GHC2024
+    extra-libraries:    cudart
     ghc-options:        -Wall
     build-depends:
         base,
         hspec,
         process,
         shoto
-    extra-libraries: cudart

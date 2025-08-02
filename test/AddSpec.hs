@@ -5,10 +5,12 @@ module AddSpec where
 import           Data.List      (isInfixOf)
 import           Foreign        (FunPtr, Ptr, withForeignPtr)
 import           Foreign.C      (CFloat)
+import           FrontendIR     (FrontendIR (..))
 import           Runtime        (GpuPtr (..), copyToCpu, copyToGpu, withKernel)
 import           Shoto
 import           System.Exit    (ExitCode (..))
 import           System.Process (readProcessWithExitCode)
+import           Tensor         (Shape (..), Tensor (..))
 import           Test.Hspec
 
 checkSymbols :: FilePath -> IO [String]
@@ -30,9 +32,15 @@ foreign import ccall "dynamic"
 spec :: Spec
 spec = describe "Shoto Compiler Add Test" $ do
     it "generate Add Kenel" $ do
-        compile `shouldBe` expectedCode
+        let a = Tensor (Shape [1]) (Shape [1])
+            b = Tensor (Shape [1]) (Shape [1])
+            ir = Add a b
+        compile ir `shouldBe` expectedCode
     it "codegen and comple" $ do
-        let code = compile
+        let aT = Tensor (Shape [1]) (Shape [1])
+            bT = Tensor (Shape [1]) (Shape [1])
+            ir = Add aT bT
+            code = compile ir
             fileName = "/tmp/add.cu"
             libName = "/tmp/add.so"
         toCuda code fileName
