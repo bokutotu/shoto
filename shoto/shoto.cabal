@@ -11,16 +11,19 @@ build-type:    Simple
 
 library
     exposed-modules:  Shoto
+                      Runtime
     hs-source-dirs:   src
     default-language: GHC2024
     ghc-options:      -Wall
     build-depends:
         base >=4.19.1.0,
         process,
+        unix,
         shoto-backend,
         shoto-codegen,
         shoto-frontend,
         shoto-middleend
+    extra-libraries:  cudart
 
 test-suite shoto-test
     type:               exitcode-stdio-1.0
@@ -35,3 +38,4 @@ test-suite shoto-test
         hspec,
         process,
         shoto
+    extra-libraries: cudart

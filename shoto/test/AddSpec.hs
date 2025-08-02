@@ -1,6 +1,11 @@
+{-# LANGUAGE ForeignFunctionInterface #-}
+
 module AddSpec where
 
 import           Data.List      (isInfixOf)
+import           Foreign        (FunPtr, Ptr, withForeignPtr)
+import           Foreign.C      (CFloat)
+import           Runtime        (GpuPtr (..), copyToCpu, copyToGpu, withKernel)
 import           Shoto
 import           System.Exit    (ExitCode (..))
 import           System.Process (readProcessWithExitCode)
@@ -16,6 +21,12 @@ checkSymbols soPath = do
 hasFunction :: FilePath -> String -> IO Bool
 hasFunction soPath funcName = any (isInfixOf funcName) <$> checkSymbols soPath
 
+-- ファイルの上部に追加
+foreign import ccall "dynamic"
+    mkAdd ::
+        FunPtr (Ptr CFloat -> Ptr CFloat -> Ptr CFloat -> IO ()) ->
+        (Ptr CFloat -> Ptr CFloat -> Ptr CFloat -> IO ())
+
 spec :: Spec
 spec = describe "Shoto Compiler Add Test" $ do
     it "generate Add Kenel" $ do
@@ -28,6 +39,20 @@ spec = describe "Shoto Compiler Add Test" $ do
         nvcc libName fileName
         hasAdd <- hasFunction libName "add"
         hasAdd `shouldBe` True
+        let a = [1.0] :: [CFloat]
+            b = [2.0] :: [CFloat]
+            c = [0.0] :: [CFloat]
+        aGpu <- copyToGpu a
+        bGpu <- copyToGpu b
+        cGpu <- copyToGpu c
+        withKernel "/tmp/add.so" "add" $ \fptr -> do
+            let add = mkAdd fptr
+            withForeignPtr (ptr aGpu) $ \aPtr ->
+                withForeignPtr (ptr bGpu) $ \bPtr ->
+                    withForeignPtr (ptr cGpu) $ \cPtr ->
+                        add aPtr bPtr cPtr
+        cCpu <- copyToCpu cGpu
+        cCpu `shouldBe` [3]
   where
     expectedCode =
         [ "#include <cuda_runtime.h>"

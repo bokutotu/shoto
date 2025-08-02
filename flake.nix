@@ -27,12 +27,19 @@
           overlays = [ haskellNix.overlay ];
           inherit (haskellNix) config;
         };
+        
+        # GCC 13を使用
+        gccForCuda = pkgs.gcc13;
 
         project = pkgs.haskell-nix.project' {
           src = ./.;
           compiler-nix-name = "ghc912";
+          modules = [{
+            # システムのcudartライブラリを使用
+            packages.shoto.components.library.libs = pkgs.lib.mkForce [];
+            packages.shoto.components.tests.shoto-test.libs = pkgs.lib.mkForce [];
+          }];
         };
-
       in {
         devShells.default = project.shellFor {
           tools = {
@@ -45,21 +52,30 @@
             fourmolu               = {};
             hspec-discover         = {};
           };
-          buildInputs = [ 
+          buildInputs = [
             pkgs.git
+            gccForCuda
           ];
-          
-          # システムのCUDAを使用
           shellHook = ''
-            echo "Using system CUDA installation"
-            echo "Make sure CUDA is installed on your system"
+            # GCC 13を優先
+            export PATH="${gccForCuda}/bin:$PATH"
+            export CC="${gccForCuda}/bin/gcc"
+            export CXX="${gccForCuda}/bin/g++"
             
-            # 基本的な環境変数チェック
-            if command -v nvcc &> /dev/null; then
-              echo "✓ nvcc found at: $(which nvcc)"
-              echo "  CUDA version: $(nvcc --version | grep release | awk '{print $6}')"
-            else
-              echo "✗ nvcc not found. Please install CUDA."
+            # システムのCUDAを使う
+            if [ -n "$CUDA_PATH" ]; then
+              export LD_LIBRARY_PATH="$CUDA_PATH/lib64:$LD_LIBRARY_PATH"
+              export LIBRARY_PATH="$CUDA_PATH/lib64:$LIBRARY_PATH"
+              export C_INCLUDE_PATH="$CUDA_PATH/include:$C_INCLUDE_PATH"
+            elif [ -d "/usr/local/cuda" ]; then
+              export LD_LIBRARY_PATH="/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
+              export LIBRARY_PATH="/usr/local/cuda/lib64:$LIBRARY_PATH"
+              export C_INCLUDE_PATH="/usr/local/cuda/include:$C_INCLUDE_PATH"
+            fi
+            
+            # WSL環境用の追加パス
+            if [ -d "/usr/lib/x86_64-linux-gnu" ]; then
+              export LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH"
             fi
           '';
         };
