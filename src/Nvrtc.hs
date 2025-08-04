@@ -2,17 +2,49 @@
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 
-module Nvrtc where
+module Nvrtc 
+    ( -- Types
+      NvrtcProgram
+    , NvrtcResult
+    , CUdevice
+    , CUcontext
+    , CUmodule
+    , CUfunction
+    , CUdeviceptr
+    , CUresult
+    , CUstream
+      -- Constants
+    , cudaSuccess
+    , nvrtcSuccess
+      -- NVRTC functions
+    , nvrtcGetErrorString
+    , nvrtcCreateProgram
+    , nvrtcCompileProgram
+    , nvrtcGetProgramLogSize
+    , nvrtcGetProgramLog
+    , nvrtcGetPTXSize
+    , nvrtcGetPTX
+    , nvrtcDestroyProgram
+      -- CUDA Driver API functions
+    , cuInit
+    , cuDeviceGet
+    , cuCtxCreate
+    , cuCtxDestroy
+    , cuModuleLoadData
+    , cuModuleGetFunction
+    , cuMemAlloc
+    , cuMemFree
+    , cuMemcpyHtoD
+    , cuMemcpyDtoH
+    , cuLaunchKernel
+    , cuCtxSynchronize
+    , cuGetErrorString
+    , cuModuleUnload
+    ) where
 
-import           Control.Monad          (when)
-import qualified Data.ByteString.Char8  as BS
-import           Data.ByteString.Unsafe (unsafeUseAsCString)
 import           Foreign
 import           Foreign.C.String
 import           Foreign.C.Types
-import           System.Exit            (exitFailure)
-import           Data.IORef
-import           System.IO.Unsafe       (unsafePerformIO)
 
 -- NVRTC Types
 type NvrtcProgram = Ptr ()
@@ -113,32 +145,3 @@ foreign import ccall "cuGetErrorString" cuGetErrorString :: CUresult -> Ptr CStr
 
 foreign import ccall "cuModuleUnload" cuModuleUnload :: CUmodule -> IO CUresult
 
--- Helper functions
-checkCuda :: String -> CUresult -> IO ()
-checkCuda msg result = when (result /= cudaSuccess) $ do
-    alloca $ \errStrPtr -> do
-        _ <- cuGetErrorString result errStrPtr
-        errStr <- peek errStrPtr >>= peekCString
-        error $ msg ++ ": " ++ errStr
-
-checkNvrtc :: String -> NvrtcResult -> IO ()
-checkNvrtc msg result = when (result /= nvrtcSuccess) $ do
-    errStr <- nvrtcGetErrorString result >>= peekCString
-    error $ msg ++ ": " ++ errStr
-
--- Global initialization flag
-{-# NOINLINE cudaInitialized #-}
-cudaInitialized :: IORef Bool
-cudaInitialized = unsafePerformIO $ newIORef False
-
--- Safe initialization function
-ensureCudaInitialized :: IO ()
-ensureCudaInitialized = do
-    initialized <- readIORef cudaInitialized
-    unless initialized $ do
-        result <- cuInit 0
-        if result == cudaSuccess
-            then writeIORef cudaInitialized True
-            else checkCuda "cuInit" result
-  where
-    unless = flip when . not
