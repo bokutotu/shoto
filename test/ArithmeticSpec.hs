@@ -1,16 +1,18 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
-
 module ArithmeticSpec where
 
-import           Data.List      (isInfixOf)
-import           Foreign        (FunPtr, Ptr, withForeignPtr)
-import           Foreign.C      (CFloat)
-import           FrontendIR     (FrontendIR (..))
-import           Runtime        (GpuPtr (..), copyToCpu, copyToGpu, withKernel)
-import           Shoto
-import           System.Exit    (ExitCode (..))
-import           System.Process (readProcessWithExitCode)
-import           Tensor         (Shape (..), Tensor (..))
+import qualified Data.ByteString.Char8 as BS
+import           Data.List             (isInfixOf)
+import           Foreign               (FunPtr, Ptr, withForeignPtr)
+import           Foreign.C             (CFloat)
+import           Foreign.Marshal       (alloca)
+import           Foreign.Ptr           (castPtr)
+import           Foreign.Storable      (poke)
+import           FrontendIR            (FrontendIR (..))
+import           Runtime
+import           Shoto                 (compile)
+import           System.Exit           (ExitCode (..))
+import           System.Process        (readProcessWithExitCode)
+import           Tensor                (Shape (..), Tensor (..))
 import           Test.Hspec
 
 checkSymbols :: FilePath -> IO [String]
@@ -56,37 +58,54 @@ spec = describe "Shoto Compiler Arithmetic Operations Test" $ do
 
 testBinaryOp ::
     (Tensor -> Tensor -> FrontendIR) -> String -> [CFloat] -> [CFloat] -> [CFloat] -> IO ()
-testBinaryOp op opName a b expected = do
+testBinaryOp op _ a b expected = do
     let size = length a
-        aT = Tensor (Shape [size]) (Shape [1])
-        bT = Tensor (Shape [size]) (Shape [1])
+        aT = Tensor (Shape [size]) (Shape [size])
+        bT = Tensor (Shape [size]) (Shape [size])
         ir = op aT bT
-        code = compile ir
-        fileName = "/tmp/" ++ opName ++ ".cu"
-        libName = "/tmp/" ++ opName ++ ".so"
+        code = BS.pack $ unlines $ compile ir
+        c = replicate size 0.0 :: [CFloat]
 
-    -- Compile CUDA code
-    toCuda code fileName
-    nvcc libName fileName
-
-    -- Check function exists
-    hasFunc <- hasFunction libName "add" -- Note: function name is still "add" in current implementation
-    hasFunc `shouldBe` True
-
-    -- Prepare GPU memory
-    let c = replicate size 0.0 :: [CFloat]
+        compileOptions =
+            [ "--gpu-architecture=compute_70"
+            , "-default-device" -- デフォルトデバイス設定
+            , "--use_fast_math" -- 高速数学関数
+            , "--fmad=true" -- FMA命令の使用
+            ]
+    
+    -- Prepare GPU memory outside of withCudaKernel
     aGpu <- copyToGpu a
     bGpu <- copyToGpu b
     cGpu <- copyToGpu c
-
-    -- Execute kernel
-    withKernel libName "kernel" $ \fptr -> do
-        let kernel = mkKernel fptr
-        withForeignPtr (ptr aGpu) $ \aPtr ->
-            withForeignPtr (ptr bGpu) $ \bPtr ->
-                withForeignPtr (ptr cGpu) $ \cPtr ->
-                    kernel aPtr bPtr cPtr
-
+    
+    withCudaKernel
+        0
+        code
+        (BS.pack "kernel.cu")
+        (map BS.pack compileOptions)
+        (BS.pack "kernel")
+        $ \func -> do
+            let config =
+                    KernelLaunchConfig
+                        { gridDimX = fromIntegral size
+                        , gridDimY = 1
+                        , gridDimZ = 1
+                        , blockDimX = 1
+                        , blockDimY = 1
+                        , blockDimZ = 1
+                        , sharedMemBytes = 0
+                        }
+            -- Execute kernel
+            withForeignPtr (ptr aGpu) $ \aPtr ->
+                withForeignPtr (ptr bGpu) $ \bPtr ->
+                    withForeignPtr (ptr cGpu) $ \cPtr -> do
+                        -- Need to pass addresses of the pointers, not the pointers themselves
+                        alloca $ \aPtrPtr -> alloca $ \bPtrPtr -> alloca $ \cPtrPtr -> do
+                            poke aPtrPtr aPtr
+                            poke bPtrPtr bPtr
+                            poke cPtrPtr cPtr
+                            launchKernel func config [castPtr aPtrPtr, castPtr bPtrPtr, castPtr cPtrPtr]
+    
     -- Verify results
     cCpu <- copyToCpu cGpu
     cCpu `shouldBe` expected

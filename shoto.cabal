@@ -15,8 +15,9 @@ library
         Runtime
         Shoto
         Tensor
-        Nvrtc
-        NvrtcWrapper
+
+    other-modules:
+        Internal.FFI
 
     hs-source-dirs:   src
     default-language: GHC2024
@@ -38,7 +39,6 @@ test-suite shoto-test
     build-tool-depends: hspec-discover:hspec-discover
     hs-source-dirs:     test
     other-modules:      ArithmeticSpec
-                      , NvrtcSpec
     default-language:   GHC2024
     extra-libraries:    cudart
                       , cuda

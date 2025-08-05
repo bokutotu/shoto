@@ -1,50 +1,78 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE OverloadedStrings        #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
 
-module Nvrtc 
-    ( -- Types
-      NvrtcProgram
-    , NvrtcResult
-    , CUdevice
-    , CUcontext
-    , CUmodule
-    , CUfunction
-    , CUdeviceptr
-    , CUresult
-    , CUstream
-      -- Constants
-    , cudaSuccess
-    , nvrtcSuccess
-      -- NVRTC functions
-    , nvrtcGetErrorString
-    , nvrtcCreateProgram
-    , nvrtcCompileProgram
-    , nvrtcGetProgramLogSize
-    , nvrtcGetProgramLog
-    , nvrtcGetPTXSize
-    , nvrtcGetPTX
-    , nvrtcDestroyProgram
-      -- CUDA Driver API functions
-    , cuInit
-    , cuDeviceGet
-    , cuCtxCreate
-    , cuCtxDestroy
-    , cuModuleLoadData
-    , cuModuleGetFunction
-    , cuMemAlloc
-    , cuMemFree
-    , cuMemcpyHtoD
-    , cuMemcpyDtoH
-    , cuLaunchKernel
-    , cuCtxSynchronize
-    , cuGetErrorString
-    , cuModuleUnload
-    ) where
+module Internal.FFI (
+    -- CUDA Runtime API
+    cudaMalloc,
+    cudaMemcpy,
+    cudaFree,
+    cudaMemcpyHostToDevice,
+    cudaMemcpyDeviceToHost,
+    
+    -- NVRTC Types
+    NvrtcProgram,
+    NvrtcResult,
+    
+    -- CUDA Driver API Types
+    CUdevice,
+    CUcontext,
+    CUmodule,
+    CUfunction,
+    CUdeviceptr,
+    CUresult,
+    CUstream,
+    
+    -- Result codes
+    cudaSuccess,
+    nvrtcSuccess,
+    
+    -- NVRTC functions
+    nvrtcGetErrorString,
+    nvrtcCreateProgram,
+    nvrtcCompileProgram,
+    nvrtcGetProgramLogSize,
+    nvrtcGetProgramLog,
+    nvrtcGetPTXSize,
+    nvrtcGetPTX,
+    nvrtcDestroyProgram,
+    
+    -- CUDA Driver API functions
+    cuInit,
+    cuDeviceGet,
+    cuCtxCreate,
+    cuCtxDestroy,
+    cuDevicePrimaryCtxRetain,
+    cuDevicePrimaryCtxRelease,
+    cuCtxSetCurrent,
+    cuModuleLoadData,
+    cuModuleGetFunction,
+    cuMemAlloc,
+    cuMemFree,
+    cuMemcpyHtoD,
+    cuMemcpyDtoH,
+    cuLaunchKernel,
+    cuCtxSynchronize,
+    cuGetErrorString,
+    cuModuleUnload
+) where
 
-import           Foreign
 import           Foreign.C.String
 import           Foreign.C.Types
+import           Foreign.ForeignPtr
+import           Foreign.Ptr
+
+-- CUDA Runtime API
+foreign import ccall "cudaMalloc" cudaMalloc :: Ptr (Ptr ()) -> CSize -> IO CInt
+
+foreign import ccall "cudaMemcpy" cudaMemcpy :: Ptr () -> Ptr () -> CSize -> CInt -> IO CInt
+
+foreign import ccall "&cudaFree" cudaFree :: FinalizerPtr a
+
+-- CUDA memcpy types
+cudaMemcpyHostToDevice :: CInt
+cudaMemcpyHostToDevice = 1
+
+cudaMemcpyDeviceToHost :: CInt
+cudaMemcpyDeviceToHost = 2
 
 -- NVRTC Types
 type NvrtcProgram = Ptr ()
@@ -111,6 +139,12 @@ foreign import ccall "cuCtxCreate" cuCtxCreate :: Ptr CUcontext -> CUInt -> CUde
 
 foreign import ccall "cuCtxDestroy" cuCtxDestroy :: CUcontext -> IO CUresult
 
+foreign import ccall "cuDevicePrimaryCtxRetain" cuDevicePrimaryCtxRetain :: Ptr CUcontext -> CUdevice -> IO CUresult
+
+foreign import ccall "cuDevicePrimaryCtxRelease" cuDevicePrimaryCtxRelease :: CUdevice -> IO CUresult
+
+foreign import ccall "cuCtxSetCurrent" cuCtxSetCurrent :: CUcontext -> IO CUresult
+
 foreign import ccall "cuModuleLoadData" cuModuleLoadData :: Ptr CUmodule -> Ptr () -> IO CUresult
 
 foreign import ccall "cuModuleGetFunction"
@@ -144,4 +178,3 @@ foreign import ccall "cuCtxSynchronize" cuCtxSynchronize :: IO CUresult
 foreign import ccall "cuGetErrorString" cuGetErrorString :: CUresult -> Ptr CString -> IO CUresult
 
 foreign import ccall "cuModuleUnload" cuModuleUnload :: CUmodule -> IO CUresult
-
