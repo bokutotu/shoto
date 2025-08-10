@@ -1,0 +1,3 @@
+[submodule "playground/tinygrad"]
+	path = playground/tinygrad
+	url = git@github.com:tinygrad/tinygrad.git

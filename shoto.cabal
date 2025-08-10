@@ -15,6 +15,7 @@ library
         Runtime
         Shoto
         Tensor
+        TinyIR
 
     other-modules:
         Internal.FFI
