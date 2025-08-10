@@ -14,7 +14,6 @@ library
         FrontendIR
         Runtime
         Shoto
-        Tensor
         TinyIR
 
     other-modules:
@@ -32,7 +31,8 @@ library
         base >=4.19.1.0,
         bytestring,
         process,
-        unix
+        unix,
+        containers
 
 test-suite shoto-test
     type:               exitcode-stdio-1.0
@@ -52,4 +52,5 @@ test-suite shoto-test
         hspec,
         process,
         shoto,
-        bytestring
+        bytestring,
+        containers

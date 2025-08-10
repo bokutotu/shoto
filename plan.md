@@ -1,588 +1,537 @@
-# 深層学習コンパイラ 仕様書
+# 深層学習コンパイラ 仕様書（全面改訂版）
 
-本仕様は、\*\*最小語彙の Tinygrad‑like IR（Movement / Unary / Binary / Reduce のみ）\*\*を起点に、**IndexBook による軸（添え字）正規化 → Poly‑View（解析専用IR） → Region Buffer SSA → GPU方言IR**の順に段階化し、**単一MMAテンプレート**へ **Schedule Plan** を注入して高性能コード（CUDA/C, 一部 inline PTX）を自動生成するための設計である。
-以降、記法・語彙は本仕様内で完結するよう統一する。
+## 0. スコープと原則（不変）
 
----
-
-## 0. スコープと原則
-
-* 対象GPU: **NVIDIA SM80（Ampere）/SM90（Hopper）** 以降
-* 主精度: **FP16/BF16**（必要箇所で FP32 蓄積）
-* 外部 DNN/BLAS: 不使用（**CUDA/C 自動生成**、必要箇所のみ inline PTX）
+* 対象 GPU: **NVIDIA SM80（Ampere）/ SM90（Hopper） 以降**
+* 主精度: **FP16 / BF16**（必要箇所で **FP32 蓄積**）
+* 外部ライブラリ: 不使用（**CUDA/C 自動生成**、必要箇所のみ inline PTX）
 * 性能方針: **単一MMAテンプレート**に **Schedule Plan** を注入。分岐は **アーキ（SM80/SM90）** と **tail** のみに限定
-* 代表最適化: タイル化、`cp.async`/`ldmatrix`/`mma.sync`（SM80）、`tma.load`/`mbarrier`/`wgmma.mma_async`（SM90）、SMEM 二重/三重バッファ、epilogue 融合
-* MVP 対象: **GEMM / Conv / Attention**
+* MVP: **GEMM / Conv / Attention**（Epilogue 融合を原則）
 
-### 0.1 用語（本仕様での定義）
+### 0.1 用語（本仕様の定義）
 
-* **ハロー（halo）**: 出力タイル計算に必要な、入力側の追加読取り“縁”。例：2D, stride=1, dilation=1 の必要入力は `(Th+Kh−1)×(Tw+Kw−1)`。
+* **ハロー（halo）**: 出力タイル計算に必要な入力側の追加読取り“縁”。
 * **ステージ（pipeline stages）**: 非同期ロードと演算の重ね段数（2=二重、3=三重）。
-* **fan‑out**: あるノードの出力を複数の下流が消費（DAG出次数>1）。
+* **fan‑out**: ある値の出力を複数の下流が消費（DAG出次数>1）。
 * **SCoP**: 添字・境界が（区分）アフィンで表せる部分。
 * **UCC**: 単一消費者鎖（分岐しない下流パス）。
 
 ---
 
-## 1. IRスタックと役割（7層 + サービス）
+# 1. アーキ概要と責務分離
 
-1. **Frontend IR**（高位演算・計算グラフ）
-2. **Tinygrad‑like IR（Tiny IR, 最小語彙）**
-3. **IndexBook（軸自動生成・正規化：サイドテーブル）**
-4. **Poly‑View（解析専用IR：SCoP/アクセス式の区分アフィン表現）**
-5. **Region Buffer SSA**（出力のみ MemRef、内部は値SSA）
-6. **Poly Core**（多面体解析サービス；合法性判定と軽ヒント）
-7. **Schedule Plan**（薄い JSON/DSL；GPU方言IRのパラメタ）
-8. **GPU方言IR**（単一MMAテンプレートに Plan 属性を注入）
+本コンパイラは「**意味（What）**」「**添え字と領域（Where）**」「**実装（How）**」を厳密に分離する。
 
-> 以降、1.1〜1.8 で各層を定義し、2 以降で変換規則・アルゴリズムを詳述する。
+1. **Frontend IR** … モデルの意味（高位演算）。\*\*グラフ署名（I/O）\*\*を持つ。
+2. **Tiny IR** … **Movement / Unary / Binary / Reduce**の最小語彙で純関数DAG化。
+3. **IndexBook（本仕様の中核）** … 各値の**軸（Axis）・領域（Domain）・アクセス式（AxisMap）**をサイドテーブルで**正規化**。
+4. **Poly‑View** … **SCoP とアクセス式のみ**を保持。`mul→reduce(sum)` を **ContractionPattern**に抽象化。
+5. **Region Buffer SSA** … **1 Region = 1 カーネル**。出力のみ MemRef、内部は値SSA。
+6. **Poly Core** … 依存解析／ハロー算出／最小バッファ分類／バリア・バンク衝突ヒント。
+7. **Schedule Plan（JSON/DSL）** … タイル・割付・パイプライン等の方針。
+8. **GPU方言IR** … 固定骨格（`cp.async|tma → smem ping‑pong → ldmatrix|wgmma → epilogue → st.global`）に Plan を注入。
 
----
+**設計原則**
 
-## 1.1 Frontend IR（高位演算）
-
-### 役割
-
-* Conv / Attention / LayerNorm / Elementwise / Reduce 等の**高位属性**を保持（依存DAG）。
-* 後段で **最小語彙 Tiny IR** に正規化可能であること。
-
-### 型・主な Op（要点）
-
-* `TensorType{dtype, shape, layout?}`
-* `Conv2D(x,w,bias?, attrs{stride,pad,dilation,groups,layout,algo_set?})`
-* `Attention(Q,K,V, mask?, attrs{heads, causal?, dropout?, algo_set?})`
-* `LayerNorm(x, gamma, beta, attrs{axis, eps})`
-* `Elementwise(fn, tensors...)` / `Reduce(fn, x, axes)` / `Movement(kind, ...)`
-
-**不変**: Frontend では実メモリコピーを行わない（Movement は論理操作）。
+* **非アフィン**は Poly‑View から除外し、そこで **Region 境界**を確定。
+* \*\*物質化（gmem ラウンドトリップ）\*\*は最小化。Epilogue は **acc 直接適用**。
+* **Front→Tiny→IndexBook**の流れは\*\*決定的（deterministic）\*\*で再現可能。
 
 ---
 
-## 1.2 Tinygrad‑like IR（最小語彙）
+# 2. Frontend IR（高位演算）
 
-### 役割
+## 2.1 役割
 
-* **Movement / Unary / Binary / Reduce のみ**で構成される純関数DAG（コピー禁止）。
-* 行列積・畳み込みなどの縮約は **`reshape/permute/expand/pad` + `mul` + `reduce(sum)`** の**合成パターン**で表現する。
+* Conv / Attention / LayerNorm / Elementwise / Reduce 等の**高位属性**（例：stride, pad, heads, axis, eps）を保持。
+* **実メモリコピー**は行わない（Movement は“論理ビュー”のみ）。
 
-### 使用する Op
+## 2.2 グラフ署名（I/O）— 必須
 
-* `Movement{kind ∈ {reshape, permute, expand, pad, shrink, view}}`
-* `Unary{fn ∈ {relu, gelu, exp, neg, sqrt, recip, …}}`
-* `Binary{fn ∈ {add, sub, mul, div, max, where, …}}`
-* `Reduce{fn ∈ {sum, max, min}, axes:[…]}`
+* **MUST**: **Graph Signature** として、モデルの **入力/出力**を明示する。
+* 署名は ABI・ShapeSets・最適化境界の**基準**。
+* `Input/Output` を**演算ノード化しない**（デバッグ用としての仮ノードは **MAY**）。
 
-### 例（GEMM + bias + ReLU）
+### 署名＋テンソル表＋DAG（例：GEMM+Bias+ReLU）
+
+```json
+{
+  "signature": {
+    "inputs": [
+      {"tensor":"A","role":"data","mutability":"immutable"},
+      {"tensor":"B","role":"data","mutability":"immutable"},
+      {"tensor":"bias","role":"param","mutability":"immutable","storage":"const_pool"}
+    ],
+    "outputs": [{"tensor":"C2"}]
+  },
+  "tensors": {
+    "A":{"dtype":"fp16","shape":["M","K"]},
+    "B":{"dtype":"fp16","shape":["K","N"]},
+    "bias":{"dtype":"fp16","shape":["N"]},
+    "C2":{"dtype":"fp16","shape":["M","N"]}
+  },
+  "graph": [
+    {"op":"GEMM","name":"gemm","inputs":["A","B"],"outputs":["C0"],"attrs":{"acc_dtype":"fp32"}},
+    {"op":"Elementwise","name":"bias_add","fn":"add","inputs":["C0","bias"],"outputs":["C1"]},
+    {"op":"Elementwise","name":"relu","fn":"relu","inputs":["C1"],"outputs":["C2"]}
+  ]
+}
+```
+
+## 2.3 不変条件
+
+* すべてのノードは**純関数**。副作用なし。
+* 形状は整数と記号（Sym）で表す。未確定は **ShapeSets** でクラスタ化。
+* Epilogue 候補は**融合可能**な位置に置く。
+
+---
+
+# 3. Tiny IR（最小語彙）
+
+## 3.1 役割
+
+* **Movement / Unary / Binary / Reduce**のみで、演算を純関数DAGとして記述。
+* GEMM/Conv/Attention の縮約は `movement(affine系) + mul + reduce(sum)` の**合成**で表現。
+
+## 3.2 セマンティクス
+
+* **Movement**: `reshape/permute/expand/pad/slice/view`。**論理ビューのみ**。
+* **Unary/Binary**: 要素関数。Binary は**右端揃えブロードキャスト**。
+* **Reduce**: 指定軸の縮約（`sum/max/min`）。縮約軸は**出力から削除**。
+
+## 3.3 エラー条件
+
+* ブロードキャスト不一致（両辺 size>1 かつ非一致）
+* 負ストライド `view`（未対応）
+* `slice` の `step>1` が **floordiv+ガード**へ正規化不能
+
+### 参考ダンプ（Attention核）
 
 ```json
 {
   "ops": [
-    {"op":"Movement","name":"a_reshape","kind":"reshape","inputs":["A"],"outputs":["A_r"],"attrs":{"new_shape":["M","K","1"]}},
-    {"op":"Movement","name":"b_reshape","kind":"reshape","inputs":["B"],"outputs":["B_r"],"attrs":{"new_shape":["1","K","N"]}},
-    {"op":"Binary","name":"mul","fn":"mul","inputs":["A_r","B_r"],"outputs":["T"]},
-    {"op":"Reduce","name":"sum_k","fn":"sum","inputs":["T"],"outputs":["C0"],"axes":["K"]},
-    {"op":"Movement","name":"bias_expand","kind":"expand","inputs":["bias"],"outputs":["bias_mn"],"attrs":{"new_shape":["M","N"]}},
-    {"op":"Binary","name":"bias_add","fn":"add","inputs":["C0","bias_mn"],"outputs":["C1"]},
-    {"op":"Unary","name":"relu","fn":"relu","inputs":["C1"],"outputs":["C2"]}
-  ],
-  "values": {
-    "A":{"dtype":"fp16","shape":["M","K"]},
-    "B":{"dtype":"fp16","shape":["K","N"]},
-    "bias":{"dtype":"fp16","shape":["N"]},
-    "A_r":{"dtype":"fp16","shape":["M","K","1"]},
-    "B_r":{"dtype":"fp16","shape":["1","K","N"]},
-    "T":{"dtype":"fp16","shape":["M","K","N"]},
-    "C2":{"dtype":"fp16","shape":["M","N"]}
+    {"op":"Movement","name":"expand_q","kind":"expand","inputs":["Q"],"outputs":["Qe"],"attrs":{"new_shape":["B","H","M","N","D"]}},
+    {"op":"Movement","name":"expand_k","kind":"expand","inputs":["K"],"outputs":["Ke"],"attrs":{"new_shape":["B","H","M","N","D"]}},
+    {"op":"Binary","name":"mul_qk","fn":"mul","inputs":["Qe","Ke"],"outputs":["E"]},
+    {"op":"Reduce","name":"sum_d","fn":"sum","inputs":["E"],"outputs":["S"],"axes":["D"]},
+    {"op":"Reduce","name":"row_max","fn":"max","inputs":["S"],"outputs":["Mrow"],"axes":["N"]},
+    {"op":"Binary","name":"shift","fn":"sub","inputs":["S","Mrow"],"outputs":["S0"]},
+    {"op":"Unary","name":"exp","fn":"exp","inputs":["S0"],"outputs":["A"]},
+    {"op":"Reduce","name":"row_sum","fn":"sum","inputs":["A"],"outputs":["Z"],"axes":["N"]},
+    {"op":"Binary","name":"prob","fn":"div","inputs":["A","Z"],"outputs":["P"]},
+    {"op":"Movement","name":"expand_v","kind":"expand","inputs":["V"],"outputs":["Ve"],"attrs":{"new_shape":["B","H","M","N","D"]}},
+    {"op":"Binary","name":"pv","fn":"mul","inputs":["P","Ve"],"outputs":["PV"]},
+    {"op":"Reduce","name":"sum_n","fn":"sum","inputs":["PV"],"outputs":["O"],"axes":["N"]}
+  ]
+}
+```
+
+---
+
+# 4. IndexBook（中核：軸・領域・アクセスの正規化サイドテーブル）
+
+## 4.1 目的
+
+* Tiny IR を汚さずに、**各値の**
+  **(a) 軸（AxisVar）**、**(b) 領域（Domain）**、**(c) アクセス式（AxisMap）**、**(d) 縮約軸情報**
+  を **決定的かつ機械変換可能な形**で保持する。
+
+## 4.2 概念モデル（自然言語）
+
+* **AxisVar**: 各値の**出力軸**。`i0,i1,…` の**連番命名**。`size ∈ {Int, Sym}`、`kind ∈ {iter, reduce, broadcast}`。
+* **AxisExpr**: アフィンと **floordiv** のみ。剰余 `%` は **`E − q*floor(E/q)` + ガード**へ展開し保持しない。
+* **AxisMap**: **出力軸 → 入力軸**の式ベクトル。値の各入力に 1 つずつ存在。
+* **Domain**: 既定の範囲 `0 ≤ ik < sizek` に加え、`slice/pad/%` 由来条件は **piecewise** 化（複数ピースの合併）。
+* **IndexInfo（値ごと）**: `axes / domain / inputs[{value_id,map}] / reduce_axes[] / flags(non_scop)` を持つ。
+* **署名整列**: Frontend 署名のシンボル名を**唯一の真**とし、すべての値の Domain／AxisExpr を `align_params` で整列する。
+
+## 4.3 全体不変（MUST）
+
+1. あらゆる AxisMap は **アフィン + floordiv** のみ（`%` は禁止）。
+2. 出力軸名は **`i0,i1,…` 連番**で、同名は同一空間の同一点。
+3. ブロードキャストは式側の **定数0** で表現し、条件分岐を持たない。
+4. Reduce は対象軸を出力から**削除**し、**削除前の軸ID**を `reduce_axes` に記録。
+5. **非SCoP**（データ依存 index など）は `non_scop` でマークし、その点で **Region 境界**。
+6. `floordiv` の分母は**正**。必要に応じ `gcd` で最簡形へ正規化。
+7. Movement 連鎖は**逐次合成**し、`gist/coalesce/remove_redundancies` で式肥大を抑制。
+
+## 4.4 オペレーション別 更新規則（準拠動作）
+
+* **Leaf**（署名/テンソル表に対応）
+  軸 `i0..` を発番し、`0 ≤ ik < Dk` を Domain に追加。`inputs=[]`。
+* **Unary**
+  **恒等継承**（軸/Domain/AxisMap そのまま）。
+* **Binary（右端揃え Broadcast）**
+  右端から形状を突き合わせ、両辺>1 の不一致で**即エラー**。
+  出力軸を新設し、**一致側は恒等、放送側は 0** を AxisMap に設定。Domain は両入力の合流。
+* **permute**
+  置換行列で AxisMap を変換。
+* **reshape/view**
+  **線形化** `L = Σ ik*stridek` → **再分解** `oj = floor(L/stride’j) % size’j`。剰余由来の**ガード**を Domain に追加。
+* **expand**
+  新軸 `oj` を導入し AxisMap に **定数0**、Domain に `0 ≤ oj < new_size`。
+* **slice/shrink**
+  `lo ≤ ik < hi` を Domain に追加。`step>1` は `ik' = floor((ik−lo)/step)` とガードで表現。
+* **pad**
+  中央は恒等。境界は **別ピース** として Domain を分割（in‑bounds / out‑of‑bounds）。
+* **Reduce(axes=K)**
+  軸 `K` を `kind=reduce` にマークし**削除**。残軸は `i0..` で**名称再割当**（軸IDは保持）。`reduce_axes` に削除前IDを記録。
+
+## 4.5 代表ダンプ（IndexBook 抜粋）
+
+### GEMM（中間 T と縮約出力 C0）
+
+```json
+{
+  "index_book": {
+    "T": {
+      "axes":[{"id":0,"name":"i0","size":"M","kind":"iter"},{"id":1,"name":"i1","size":"K","kind":"iter"},{"id":2,"name":"i2","size":"N","kind":"iter"}],
+      "domain":{"constraints":[["0<=i0","i0<M"],["0<=i1","i1<K"],["0<=i2","i2<N"]]},
+      "inputs":[{"value_id":"A","map":["i0","i1"]},{"value_id":"B","map":["i1","i2"]}]
+    },
+    "C0": {
+      "axes":[{"id":3,"name":"i0","size":"M","kind":"iter"},{"id":4,"name":"i1","size":"N","kind":"iter"}],
+      "domain":{"constraints":[["0<=i0","i0<M"],["0<=i1","i1<N"]]},
+      "inputs":[{"value_id":"T","map":["i0","k","i1"]}],
+      "reduce_axes":[1]
+    }
   }
 }
 ```
 
----
-
-## 1.3 IndexBook（軸自動生成・正規化：サイドテーブル）
-
-### 目的
-
-* Tiny IR を汚さずに、**軸（添え字）空間を構築時に自動生成・正規化**し、後段の Poly‑View/isl 変換を機械化・安定化する。
-
-### データモデル
-
-* **AxisVar**: `{ id: int, name: "i0|i1|…", size: SymOrInt, kind: "iter"|"reduce"|"broadcast" }`
-* **AxisExpr**: アフィン + 整数除算（`floordiv`）のみの式
-* **AxisMap**: `AxisExpr[]`（**出力軸 → 入力軸**の式ベクトル）
-* **Domain**: `{ constraints: Constr[], pieces?: Domain[] }`（区分アフィン制約集合）
-* **IndexInfo（値ごと）**:
-
-  * `axes: AxisVar[]`（出力軸を `i0,i1,...` で連番）
-  * `domain: Domain`（`0 ≤ ik < sizek` + 追加ガード）
-  * `inputs: { value_id: string, map: AxisMap }[]`（入力ごとのアクセス式）
-  * `reduce_axes?: AxisId[]`（Reduce 直前に消える軸の元ID）
-* **IndexBook**: `value_id → IndexInfo` の辞書（IR本体と独立に保持）
-
-### 不変条件
-
-1. すべての AxisMap は **アフィン＋floordiv** のみ（`%` は div+ガードに展開）
-2. 出力軸の命名は **`i0,i1,...` 連番**。同名は同一空間の同一位置
-3. ブロードキャストは **定数0** 成分で表現（式側に条件分岐を持たない）
-4. Reduce は対象軸を**削除**し、削除軸IDを `reduce_axes` に記録
-5. 非アフィン（gather/scatter/topk 等）は **Non‑SCoP** マーク
-
-### ノード別更新規則
-
-* **Leaf**: 軸 `i0..i{r-1}` を新規発番。`domain: 0 ≤ ik < Dk`、`kind=iter`
-* **Unary**: 恒等（軸・Domain・AxisMap 継承）
-* **Binary**: 右端揃えブロードキャスト
-
-  * 両辺 size>1 かつ一致 → 新軸 `yt`、両入力は恒等
-  * 片側が1 → 新軸 `yt`、放送側は **定数0**、もう一方は恒等
-  * 不一致は構築時エラー
-* **Movement**
-
-  * `permute`: 置換行列で AxisMap 構成
-  * `reshape/view`: **線形化** `L=Σ ik*stridek` → **再分解** `oj=floor(L/stride'_j) % size'_j`（`%` は div+ガードへ展開）
-  * `expand`: 新軸 `oj` を導入、AxisMap は **定数0**、Domain に `0 ≤ oj < new_size`
-  * `slice/shrink`: 対象軸に `lo ≤ ik < hi` を追加
-  * `pad`: 中央は恒等、外側は別ピース（in‑bounds ガード）
-* **Reduce**: `axes` を `kind=reduce` にマークし出力から削除。残軸を `i0..` で再番号。`reduce_axes` に記録
-
----
-
-## 1.4 Poly‑View（解析専用IR）
-
-### 役割
-
-* IndexBook を用いて、**SCoP とアクセス式（区分アフィン）だけ**を保持する解析専用IR。
-* `mul → reduce(sum)` の**二項縮約パターン**を検出し、**ContractionPattern**（`pattern ∈ {matmul, conv}`）として**Poly‑View 内だけ**で表す。
-
-### データモデル
-
-* `PolyBlock{name, kind, domain, accesses[], attrs}`
-
-  * `kind ∈ {ewise, reduce, movement_affine, contraction_pattern}`
-  * `domain`: 区分アフィン集合
-  * `accesses`: 各テンソルへの区分アフィン写像
-  * `attrs`（contraction の場合）:
-    `{"lhs_idx":[…], "rhs_idx":[…], "out_idx":[…], "reduce_idx":[…], "pattern":"matmul|conv", "affine_offsets":…}`
-* `Edge{from, to, deps:{true[], anti[], output[]}}`
-
-**不変**: 非アフィンは SCoP から除外（自然なリージョン境界）。
-
----
-
-## 1.5 Region Buffer SSA（出力のみ実体化）
-
-### 役割
-
-* **Region ≒ 1カーネル**。**出力のみ MemRef**、内部は**値SSA**。`mul+reduce + epilogue` は同一 Region にまとめる。
-
-### データモデル
-
-* `MemRef{shape, strides, alignment, noalias}`
-* `Region{name, inputs:(MemRef|Value)[], outputs:MemRef[], body:[Stmt]}`
-* `Stmt = Let(value=Op(...)) | Yield(outputs)`
-* 出力に `materialize: "deferred" | "gmem"`（直後消費なら `deferred`）
-
----
-
-## 1.6 Poly Core（多面体解析サービス）
-
-### 解析項目
-
-* 依存（True/Anti/Output）
-* 並列可能軸／縮約軸
-* アフィン閉性（Index 合成後も区分アフィン）
-* tail 軸抽出
-* バリア挿入ヒント（`commit/wait`, `mbarrier`）
-* バンク衝突ヒント
-* **compute‑at 合法性**と**ハロー量（bytes, per\_axis）**
-* **最小バッファ種別**（`reg / smem_ring / gmem`）
-
-### API
-
-```ts
-type Axis = string;
-type ComputeAt = { ok: boolean, halo: { bytes: number, per_axis: Record<string,number> } };
-type MinBuffer = { buffer: "reg"|"smem_ring"|"gmem", depth?: 2|3, bytes?: number };
-
-analyze(region_candidate) -> { ... }
-can_compute_at(producer, consumer, tile?) -> ComputeAt
-min_buffer_for_edge(producer, consumer, tile?) -> MinBuffer
-make_fusable_groups(scop) -> string[][]
-```
-
----
-
-## 1.7 Schedule Plan（薄い JSON/DSL）
-
-### フィールド
-
-* `tile=[BM,BN,BK]`, `stages ∈ {2,3}`
-* `bind`（例：`m.o→block.y, n.o→block.x, m.i.o→warp.y, n.i.o→warp.x`）
-* `warp_tile`（`64x64` | `64x32`）
-* `cache`（例：`{"tensor":"A","where":"smem","at":"k.i","pingpong":true}`）
-* `vectorize`（例：`{"axis":"n.i.i","width":8}`）
-* `predicate_tail`（例：`["m.i.i","n.i.i","k.i.i"]`）
-* `epilogue`（例：`["bias","relu"|"silu"|"residual"|...]`）
-* `arch`：`"sm80"|"sm90"`
-* `layout_hints`（例：`{"A_swizzle":true,"B_swizzle":true,"C_stride":"row"}`）
-* `algo_choice`（**Poly‑View の pattern に対応**）
-
-  * 例：`{"matmul":"implicit_gemm|splitk_*", "conv":"implicit_gemm|winograd_3x3|fft_conv", "attention":"streaming_softmax_2pass|online_softmax"}`
-* `local_edges`: `[{from,to,buffer:"reg"|"smem_ring"|"gmem", depth?:2|3}]`
-
-### DSL（最小）
-
-```
-split m 128; split n 64; split k 64;
-reorder m.o n.o k.o m.i.o n.i.o k.i.o m.i.i n.i.i k.i.i;
-bind m.o block.y; bind n.o block.x; bind m.i.o warp.y; bind n.i.o warp.x;
-pipeline k.i stages=2;
-cache_read A smem at=k.i pingpong=true;
-cache_read B smem at=k.i pingpong=true;
-vectorize n.i.i 8;
-predicate_tail m.i.i n.i.i k.i.i;
-epilogue bias relu;
-```
-
-**Plan→GPU方言IR 生成規則（要点）**
-
-* `bind` で CTA/warp/lane 構造を決定。
-* `pipeline` と `cache_read` で `cp.async|tma.load`、`commit/wait|mbarrier` を挿入。
-* `warp_tile` で `ldmatrix|wgmma` 形状を確定。
-* `vectorize` で `ld/st.global.v{2,4,8,16}` を選択。
-* `predicate_tail` で predicated な末端処理を生成。
-* `local_edges` に従い **reg 前渡し / SMEM リング**を組み込む。
-* `epilogue` は acc（Cフラグメント）に直接適用（GMEM往復を禁止）。
-
----
-
-## 1.8 GPU方言IR（単一MMAテンプレート）
-
-### 固定骨格
-
-`cp.async|tma.load → smem ping‑pong(commit/wait | mbarrier) → ldmatrix → {mma.sync | wgmma} → epilogue → st.global.vecN`
-
-### ステートメント
-
-* `CpAsync(dst_smem, src_gmem, bytes, group_id)`（SM80）
-* `TmaLoad(dst_smem, desc, coords, mbarrier)`（SM90）
-* `CommitGroup/WaitGroup`（SM80）
-* `LdMatrix(dst_frag, src_smem, layout)`
-* `MmaSync`（SM80） / `Wgmma`（SM90, warpgroup=128）
-* `Epilogue(acc, ops=[...])`
-* `StGlobalVec(ptr, regs|vec, pred?)`
-
-**不変**: アーキ分岐は本層のみ。tail は `predicate_tail` に従う。
-
----
-
-## 2. Frontend → Tiny IR 正規化（最小語彙での表現）
-
-* **GEMM**: `reshape/expand + mul + reduce(sum over K)`
-* **Conv2D**: `pad + movement(affine, im2col相当) + mul + reduce(sum over IC,KH,KW)`（im2col の実体化は不可）
-* **Attention**: `QKᵀ` を上記と同型の `mul+reduce`、softmax は `reduce(max/sum) + unary/binary`
-* **LayerNorm**: `reduce（welford or 2‑pass tree） + elementwise`
-* **Movement 全般**: reshape/permute/expand/pad/slice を IndexBook 規則（線形化→再分解、div+ガード）で表現
-
----
-
-## 3. Tiny → Poly‑View / isl 変換（添え字変換アルゴリズム）
-
-### 3.1 Space 正規化
-
-* タプル名と次元役割（set/in/out）を規約化。
-* **パラメータ**は `align_params`（名前一致で整列）。
-* 本体次元は IndexBook の `i0,i1,...` をそのまま用い、**追加の rename/pullback を不要化**。
-
-### 3.2 式の lowering 規則
-
-* 線形項・定数倍：アフィンの和。
-* **floordiv**：`t=floor(E/q)`（q>0）を div として導入。
-* **剰余**：`E%q = E − q*floor(E/q)` とし、**ガード** `0 ≤ E − q*floor(E/q) < q` を Domain に追加。
-* **reshape/view**：旧次元の線形化 `L=Σ ik*stridek` → 新次元へ再分解 `oj=floor(L/stride'_j) % size'_j`。
-* **permute/expand/slice/pad**：IndexBook の AxisMap/Domain を `multi_aff/pw_multi_aff`・`set/union_set` へ機械的に落とす。
-* Movement 連鎖は **逐次合成**し、式の肥大化を抑制。
-
-### 3.3 piecewise の扱い
-
-* `pad/slice`、境界 `%` 由来条件はピース分割（`pw_*`/`union_*`）。
-* 二項演算前に簡約（`gist/coalesce/remove_redundancies`）を実行し、爆発を抑制。
-
-### 3.4 生成物
-
-* **Domain**：`IndexInfo.domain → isl_set/isl_union_set`
-* **Access**：各入力 `AxisMap → isl_(pw_)multi_aff`
-* **ContractionPattern 検出**（3.5）
-
-### 3.5 ContractionPattern（mul→reduce）検出
-
-* `Binary(mul)` の直上 `Reduce(sum, axes=K)` を候補化。
-* 二入力が Movement 以外を含まないことを確認。
-* 二入力 AxisMap の比較で \*\*共通（iter）\*\*と \*\*縮約（reduce）\*\*を同定：
-
-  * 例（GEMM）: `lhs:(m,k,0)`, `rhs:(0,k,n)` → out:`(m,n)`、reduce:`k`
-* Conv は `affine_offsets`（`h+kh`, `w+kw` 等）を認識し `pattern="conv"`。
-* 検出結果は **Poly‑View 内のみ**（Tiny IR は最小語彙のまま）。
-
----
-
-## 4. Region 生成アルゴリズム
-
-**目的**: Tiny IR を**最適/準最適粒度**でリージョン化し、**1リージョン=1カーネル**、中間の物質化（GMEM ラウンドトリップ）を最小化。
-
-### 4.1 手順
-
-1. **SCoP 抽出**（IndexBook→Poly‑View）：`/`・`%` は div+ガード化。
-2. **縮約パターンの認識**（3.5）。
-3. **合法性＆余分読み**：`can_compute_at(p→c)` で合法性と **ハロー量（bytes, per\_axis）**。
-4. **差分コスト評価**
-
-   * `benefit = (bytes_write_back + bytes_read_back)/effective_BW`
-   * `cost = Δocc_time + layout_penalty + fanout_penalty`
-   * `Δtime = cost − benefit` が負なら融合。
-5. **選択法**
-
-   * 小窓（10–30ノード）: **ILP/最大閉包**で厳密
-   * 全体: **出力起点の後ろ向き貪欲** + **直前1手ロールバック**
-   * **STOP 条件**: ①UCCでない ②`can_compute_at` 不許可/ハロー過大 ③`Δtime ≥ 0`
-6. **Region Buffer SSA 生成**：出力のみ MemRef、必要に応じ `materialize:"deferred"`。Plan に `local_edges` を付与。
-7. **Plan → GPU 方言IR**：`algo_choice` は Poly‑View の `pattern` に基づく。
-
-### 4.2 しきい値（目安）
-
-* `smem_per_CTA` が上限の **\~80%** 超見込み → STOP
-* `regs_per_thr` 増で **CTA/SM が 1 に低下** → STOP
-* `vectorize.width` が **16→8/4** へ縮小 → STOP
-* **SM90**: TMA/WGMMA 要求タイルから外れる → STOP
-
----
-
-## 5. GPU最適化戦略（SM80/SM90）
-
-* **資源**:
-  `smem_per_CTA = (BM*BK + BK*BN) * sizeof(T) * stages (+ epilogue_smem?)`
-  `regs_per_thr ≈ base + acc_regs(BM,BN,warp_tile) + epilogue_regs`
-  `cta_per_SM = min(SMEM_lim/smem_per_CTA, REG_lim/(regs_thr*thr_per_CTA), BLK_lim)`
-  `occ = min(1.0, cta_per_SM * warps_per_CTA / max_warps_SM)`
-* **パイプライン**: `pipeline_eff ≈ 1 − 1/stages`、prefetch距離は1–2
-* **断片ロード**: SM80 `ldmatrix+mma.sync`（スウィズル必須）／SM90 `tma.load+mbarrier→wgmma`
-* **ベクトル化**: `width ∈ {4,8,16}`。Cストアは可能な限り `st.global.vN`
-* **バンク衝突**: テンプレ側でスウィズル固定
-* **split‑K**: serial / parallel（parallel は `atomicAdd`、蓄積 FP32 推奨）
-* **持続カーネル**: 多タイル/小問題で起動回数削減
-
----
-
-## 6. コストモデルとチューニング
-
-* 基本式:
-  `time_est = max( FLOPs/(peak_TF*occ*pipeline_eff),  Bytes/(peak_BW*occ) )`
-* 融合の差分評価:
-  `Δtime = max(ΔFLOPs/(peak_TF*occ*pipeline_eff), ΔBytes/(peak_BW*occ)) + Δocc_time + penalties − saved_bytes/peak_BW`
-  `penalties = fanout_penalty + layout_penalty(TMA/WGMMA, vectorize)`
-* 探索空間（MVP）: `tile(3–4) × stages{2,3} × warp_tile{2} × vec{4,8,16} × algo_choice（少数）` → **10〜20点**実測
-* 実測: Warmup→反復→中央値。**ShapeSets**（形状クラスタ）で結果をキャッシュ
-
----
-
-## 7. 具体例
-
-### 7.1 GEMM + bias + ReLU
-
-* Tiny IR: §1.2 例
-* Poly‑View: `pattern="matmul"`、ハロー=0
-* Region: 1個（`materialize:"deferred"`）
-* Plan（SM80 例）: `tile=[128,64,64], stages=2, warp_tile=64x64, vec=8`
-  `local_edges=[{"from":"sum_k","to":"relu","buffer":"reg"}]`
-
-### 7.2 Conv 3×3 + SiLU
-
-* Tiny IR: `pad + movement(affine) + mul + reduce(sum over ic,kh,kw) + silu`
-* Poly‑View: `pattern="conv"`, ハロー(±1,±1)
-* Plan: `algo_choice.conv = implicit_gemm | winograd_3x3`、`local_edges=smem_ring`
-
-### 7.3 Attention（QKᵀ→softmax→V, causal）
-
-* Tiny IR: `mul+reduce(sum over d)`（QKᵀ）、行 softmax（max/sum 2パス）、`mul+reduce`（S\*V）
-* Poly‑View: 前半/後半を `pattern="matmul"`、中間は ewise+reduce
-* Plan: `algo_choice.attention = streaming_softmax_2pass`
-
----
-
-## 8. ランタイム／ABI／ShapeSets
-
-* **ConstPool**: weights の連続配置とアライン
-* **Memory Arena**: 生存区間解析に基づく再利用
-* **ShapeSets**: 動的形状をクラスタ化し Plan/実測をキャッシュ
-* **API**: `model_init`, `model_run`, `model_free`（Param‑Block 受け渡し）
-* **CUDA Graph**: 形状クラスタごとに 1 個キャプチャして再利用
-* **RNG（学習）**: counter‑based（Philox系）で副作用を制御
-* **エラー**: SMEM/REG 超過・非アフィン・アライン不整合は明示的診断を返す
-
----
-
-## 9. デバッグ/検証
-
-* ダンプ: `--dump=frontend,tiny,indexbook,poly_view,region,plan,gpu,cu`
-* CPU プレイバック（Region 内算術の JIT/解釈）
-* 数値検証: FP32 参照との `rtol=1e-3, atol=1e-3` 比較
-* 測定ログ: `FLOPs/Bytes/occ/estimate/actual/plan` を CSV 追記
-
----
-
-## 10. 落とし穴と対策
-
-* tail 分岐増 → `predicate_tail` 自動生成。中央は `vecN/mma` を維持
-* レジスタスピル → `warp_tile` 縮小、acc 分割、epilogue 合成順見直し
-* SMEM バンク衝突 → テンプレ側スウィズル固定
-* coalescing 崩壊 → `bind` を連続軸に、`vectorize` 幅調整
-* split‑K 原子衝突 → 出力タイル分割、ブロック内集約→原子
-* 数値安定 → softmax は max‑shift、LN は welford、acc は FP32
-* ハロー過大 → `can_compute_at.halo.bytes` 閾値で STOP
-* 占有率低下 → `Δocc` で STOP、`stages/warp_tile/vec` を縮退
-
----
-
-## 11. 実装ロードマップ
-
-1. **IndexBook** の最小実装（§1.3 規則）
-2. Tiny → Poly‑View 変換（§3）
-3. ContractionPattern 検出（§3.5）
-4. `can_compute_at` と **ハロー算出**（conv の pad を含む）
-5. Region 生成（§4）と `local_edges` 生成
-6. Plan（§1.7）→ GPU方言IR（§1.8）のコード生成
-7. SM80 GEMM → epilogue 融合 → 小チューナ（10〜20点）
-8. Conv（implicit → winograd\_3x3）
-9. Attention 2パス
-10. SM90 分岐（`tma.load/mbarrier/wgmma`）
-11. CUDA Graph / ShapeSets / Arena / ConstPool
-
----
-
-## 12. 付録：形式仕様
-
-### 12.1 Tiny IR（最小語彙）
+### Conv（stride=2, pad=1）— piecewise（in/out‑of‑bounds）
 
 ```json
 {
-  "ops": [
-    {"op":"Movement","name":"string","kind":"reshape|permute|expand|pad|shrink|view","inputs":["..."],"outputs":["..."],"attrs":{...}},
-    {"op":"Unary","name":"string","fn":"relu|gelu|exp|neg|sqrt|recip|...","inputs":["..."],"outputs":["..."]},
-    {"op":"Binary","name":"string","fn":"add|sub|mul|div|max|where|...","inputs":["..."],"outputs":["..."]},
-    {"op":"Reduce","name":"string","fn":"sum|max|min","inputs":["..."],"outputs":["..."],"axes":["..."]}
-  ],
-  "values": {"name":{"dtype":"fp16|bf16|fp32","shape":["..."]}}
+  "index_book": {
+    "Xv": {
+      "axes":[{"id":0,"name":"n","size":"N","kind":"iter"},{"id":1,"name":"c","size":"C","kind":"iter"},{"id":2,"name":"h","size":"Ho","kind":"iter"},{"id":3,"name":"w","size":"Wo","kind":"iter"},{"id":4,"name":"kh","size":3,"kind":"iter"},{"id":5,"name":"kw","size":3,"kind":"iter"}],
+      "domain":{"pieces":[
+        {"constraints":[["0<=2*h+kh-1","2*h+kh-1<H+2*1"],["0<=2*w+kw-1","2*w+kw-1<W+2*1"]]},
+        {"constraints":[["else_pad_piece"]]}
+      ]},
+      "inputs":[{"value_id":"Xp","map":["n","c","2*h+kh-1","2*w+kw-1"]}]
+    }
+  }
 }
 ```
 
-### 12.2 IndexBook（サイドテーブル）
+### Attention（多様マスクの broadcast 正規化）
 
-```ts
-type AxisVar  = { id: number, name: string, size: SymOrInt, kind: "iter"|"reduce"|"broadcast" };
-type AxisExpr = Affine | FloorDiv;       // 剰余は div+ガードで表現
-type AxisMap  = AxisExpr[];              // 出力軸 -> 入力軸
-type Domain   = { constraints: Constr[], pieces?: Domain[] };
-type IndexInfo = {
-  axes: AxisVar[],
-  domain: Domain,
-  inputs: { value_id: string, map: AxisMap }[],
-  reduce_axes?: number[]
-};
-interface IndexBook { get(value_id: string): IndexInfo }
+```json
+{
+  "index_book": {
+    "S_masked": {
+      "axes":[{"id":0,"name":"b","size":"B","kind":"iter"},{"id":1,"name":"h","size":"H","kind":"iter"},{"id":2,"name":"m","size":"M","kind":"iter"},{"id":3,"name":"n","size":"N","kind":"iter"}],
+      "inputs":[{"value_id":"S","map":["b","h","m","n"]},{"value_id":"mask","map":["b","h","m","n"]}]
+    }
+  }
+}
 ```
 
-### 12.3 Poly‑View
+## 4.6 IndexBook から得る解析量（下流への“意味”）
+
+* **tail 軸**: タイル端で predication が必要な軸を抽出。
+* **ハロー量**: pad/slice 起因の越境読取りを**軸別**（例：`h:±1, w:±1`）と**総Bytes**で算出。
+* **最小バッファ種別**: `reg / smem_ring / gmem` と必要段数（2/3）。
+* **compute‑at 合法性**: 生依存とハローから**融合可否**を判定。
+  （結果は Poly Core で JSON レポートとして提供）
+
+---
+
+# 5. Poly‑View（解析専用IR）
+
+## 5.1 役割と性質
+
+* **保持対象**は **SCoP の Domain** と \*\*アクセス式（区分アフィン）\*\*のみ。
+* `mul → reduce(sum)` を検出し、**ContractionPattern**（`matmul|conv`）として抽象化。
+* `pad/slice/%` 由来境界は **piecewise domain**（union）で表現。
+* **非アフィン**は SCoP から除外＝**その点で Region 境界**。
+
+## 5.2 生成規則（IndexBook → Poly‑View）
+
+* **空間正規化**: IndexBook の連番軸名をそのまま用い、余分な rename を作らない。
+* **式の lowering**: AxisMap を `multi_aff / pw_multi_aff` へ。`floordiv` は `div` として導入。`%` 起源のガードは domain 側に。
+* **簡約**: `coalesce / gist / remove_redundancies` を必須実行。
+* **パターン検出**: `Binary(mul)` の直上 `Reduce(sum)` を候補化。二入力が Movement 以外を含まないことを確認し、共通軸／縮約軸を同定。
+
+### 代表ダンプ（GEMM）
 
 ```json
 {
   "poly_view": {
     "blocks": [
       {
-        "name":"string",
-        "kind":"ewise|reduce|movement_affine|contraction_pattern",
-        "domain":{"axis":["lower","upper"]},
-        "accesses":[{"tensor":"string","map":"piecewise_affine"}],
-        "attrs":{"pattern":"matmul|conv","lhs_idx":[],"rhs_idx":[],"out_idx":[],"reduce_idx":[],"affine_offsets":{}}
+        "name":"gemm_core",
+        "kind":"contraction_pattern",
+        "domain":{"set":"{ [m,n] : 0<=m<M and 0<=n<N }"},
+        "accesses":[
+          {"tensor":"A","map":"{ [m,n,k] -> A[m,k] }"},
+          {"tensor":"B","map":"{ [m,n,k] -> B[k,n] }"},
+          {"tensor":"C0","map":"{ [m,n] -> C0[m,n] }"}
+        ],
+        "attrs":{"pattern":"matmul","lhs_idx":["m","k"],"rhs_idx":["k","n"],"out_idx":["m","n"],"reduce_idx":["k"],"affine_offsets":{}}
       }
     ],
-    "edges":[{"from":"string","to":"string","deps":{"true":[],"anti":[],"output":[]}}]
+    "edges":[]
   }
 }
 ```
 
-### 12.4 Region Buffer SSA
+---
+
+# 6. Region Buffer SSA
+
+## 6.1 役割と性質
+
+* **Region ≒ 1 カーネル**。
+* **出力のみ MemRef** を持ち、内部は値SSA。
+* `mul+reduce + epilogue` は**同一 Region で融合**し、acc に直接適用。
+* 出力 `materialize` は `deferred|gmem`（直後消費なら `deferred`）。
+
+### 代表ダンプ（GEMM+Epilogue 融合）
 
 ```json
 {
   "region": {
-    "name":"string",
-    "inputs":[{"name":"A","memref":{"shape":[],"strides":[],"alignment":128,"noalias":true}}],
-    "outputs":[{"name":"C","memref":{"shape":[],"strides":[],"alignment":128,"noalias":true},"materialize":"deferred|gmem"}],
-    "body":[{"let":"v","op":{/* Tiny準拠 */}}, {"yield":["v -> C"]}]
+    "name":"gemm_bias_relu",
+    "inputs":[
+      {"name":"A","memref":{"shape":["M","K"],"alignment":128,"noalias":true}},
+      {"name":"B","memref":{"shape":["K","N"],"alignment":128,"noalias":true}},
+      {"name":"bias","memref":{"shape":["N"],"alignment":128,"noalias":true}}
+    ],
+    "outputs":[{"name":"C","memref":{"shape":["M","N"],"alignment":128,"noalias":true},"materialize":"gmem"}],
+    "body":[
+      {"let":"C0","op":{"kind":"contraction","pattern":"matmul","lhs":"A","rhs":"B","acc_dtype":"fp32"}},
+      {"let":"C1","op":{"kind":"ewise","fn":"add","inputs":["C0","bias"]}},
+      {"let":"C2","op":{"kind":"unary","fn":"relu","inputs":["C1"]}},
+      {"yield":["C2 -> C"]}
+    ]
   }
 }
 ```
 
-### 12.5 Schedule Plan（JSON）
+---
+
+# 7. Poly Core（多面体解析サービス）
+
+## 7.1 提供情報
+
+* **依存**（True/Anti/Output）
+* **並列可能軸／縮約軸**
+* **アフィン閉性**（合成後も区分アフィンか）
+* **tail 軸抽出**（predication 対象）
+* **バリア挿入ヒント**（SM80: commit/wait, SM90: mbarrier）
+* **バンク衝突ヒント**（スウィズル推奨）
+* **compute‑at 合法性**（ハロー量含む）
+* **最小バッファ**（`reg / smem_ring / gmem`, depth=2|3）
+
+### レポート例
 
 ```json
 {
-  "tile":[BM,BN,BK],
+  "analysis": {
+    "parallel_axes":["m","n"],
+    "reduce_axes":["k"],
+    "tail_axes":["m","n","k"],
+    "compute_at":{"ok":true,"halo":{"bytes":0,"per_axis":{"m":0,"n":0,"k":0}}},
+    "min_buffer":{"buffer":"reg","depth":2}
+  }
+}
+```
+
+---
+
+# 8. Schedule Plan（JSON 定義と意味）
+
+## 8.1 フィールドとセマンティクス
+
+* `tile=[BM,BN,BK]` … CTA タイル
+* `stages ∈ {2,3}` … SMEM パイプライン段数
+* `bind` … 軸の CTA/warp/lane への割付（例：`m.o→block.y`）
+* `warp_tile` … warp 内 MMA 形状（例：`64x64`）
+* `cache` … どのテンソルをどこでキャッシュ（`smem`）し、どの軸で入替（`at`）
+* `vectorize` … グローバル ld/st のベクトル幅
+* `predicate_tail` … predication 対象軸
+* `epilogue` … acc 直接適用オペ（bias/activation）
+* `arch ∈ {"sm80","sm90"}` … アーキ分岐
+* `layout_hints` … スウィズルや出力ストライド指示
+* `algo_choice` … `matmul|conv|attention` の実装分岐
+* `local_edges` … 値間前渡し（`reg`）や **SMEM リング**（`smem_ring`, depth）
+
+### 代表ダンプ（GEMM/SM80）
+
+```json
+{
+  "tile":[128,64,64],
   "stages":2,
   "bind":{"m.o":"block.y","n.o":"block.x","m.i.o":"warp.y","n.i.o":"warp.x"},
   "warp_tile":"64x64",
-  "cache":[{"tensor":"A","where":"smem","at":"k.i","pingpong":true},{"tensor":"B","where":"smem","at":"k.i","pingpong":true}],
+  "cache":[
+    {"tensor":"A","where":"smem","at":"k.i","pingpong":true},
+    {"tensor":"B","where":"smem","at":"k.i","pingpong":true}
+  ],
   "vectorize":{"axis":"n.i.i","width":8},
   "predicate_tail":["m.i.i","n.i.i","k.i.i"],
   "epilogue":["bias","relu"],
-  "arch":"sm80|sm90",
+  "arch":"sm80",
   "layout_hints":{"A_swizzle":true,"B_swizzle":true,"C_stride":"row"},
-  "algo_choice":{"matmul":"implicit_gemm|splitk_*","conv":"implicit_gemm|winograd_3x3|fft_conv","attention":"streaming_softmax_2pass|online_softmax"},
+  "algo_choice":{"matmul":"implicit_gemm"},
   "local_edges":[{"from":"sum_k","to":"relu","buffer":"reg"}]
 }
 ```
 
-### 12.6 DSL 最小文法
+---
 
+# 9. GPU方言IR（単一MMAテンプレート）
+
+## 9.1 固定骨格と意味
+
+* **SM80**: `cp.async → commit/wait → ldmatrix → mma.sync → epilogue → st.global.vN`
+* **SM90**: `tma.load → mbarrier.arrive/wait → wgmma.mma_async → epilogue → st.global.vN`
+* **アーキ分岐**は本層のみ。
+* **tail** は Plan の `predicate_tail` に従い predicated。
+* **Epilogue** は **acc** に直適用（GMEM 往復禁止）。
+
+### 代表ダンプ（SM90）
+
+```json
+{
+  "gpu_ir": {
+    "arch":"sm90",
+    "stmts":[
+      {"TmaLoad":{"dst_smem":"smA[s0]","desc":"A_desc","coords":"(m,k0)","mbarrier":"mb"}},
+      {"TmaLoad":{"dst_smem":"smB[s0]","desc":"B_desc","coords":"(k0,n)","mbarrier":"mb"}},
+      {"MBarrierArrive":{"mbarrier":"mb"}},
+      {"MBarrierWait":{"mbarrier":"mb"}},
+      {"Wgmma":{"acc":"acc","a_desc":"smA_tile","b_desc":"smB_tile","shape":"64x128x64","dtype":"fp16_fp32acc"}},
+      {"Epilogue":{"acc":"acc","ops":["bias"]}},
+      {"StGlobalVec":{"ptr":"C+coff","regs":"acc_vec","pred":"p_tail"}}
+    ]
+  }
+}
 ```
-program := stmt (';' stmt)*
-stmt    := split | reorder | fuse | bind | pipeline | cache_read | vectorize | unroll | predicate_tail | epilogue | algo_choice
-split   := 'split' axis int
-reorder := 'reorder' axis+
-fuse    := 'fuse' axis axis '->' axis
-bind    := 'bind' axis target
-pipeline:= 'pipeline' axis 'stages=' int
-cache_read := 'cache_read' tensor 'smem' 'at=' axis ('pingpong=' ('true'|'false'))?
-vectorize:= 'vectorize' axis int
-unroll  := 'unroll' axis int
-predicate_tail := 'predicate_tail' axis+
-epilogue:= 'epilogue' op+
-algo_choice := 'algo_choice' key value
-axis    := [a-z.]+
-target  := 'block.x'|'block.y'|'block.z'|'warp.x'|'warp.y'|'warp.z'
-op      := 'bias'|'relu'|'silu'|'gelu'|'residual'
-key     := 'matmul'|'conv'|'attention'
-value   := [a-z0-9_]+
-```
-
-### 12.7 isl API 対応表（参考）
-
-| 機能              | 代表 API                                                       |
-| --------------- | ------------------------------------------------------------ |
-| Domain 作成       | `isl_set_read_from_str` / builder                            |
-| Param 整列        | `isl_set_align_params` / `isl_map_align_params`              |
-| アフィン・div        | `isl_aff`, `isl_pw_aff`, `isl_multi_aff`, `isl_pw_multi_aff` |
-| 合成/引き戻し         | `*_pullback_*`, `isl_set_preimage_multi_aff`                 |
-| piecewise/union | `isl_union_set`, `isl_union_map`                             |
-| 簡約              | `isl_*_coalesce`, `isl_*_gist`, `isl_*_remove_redundancies`  |
 
 ---
 
-## 13. テストと失敗条件（Index/isl 関連）
+# 10. 変換パイプライン（Front→Tiny→IndexBook→Poly‑View→Region→Plan→GPU）
 
-* **ブロードキャスト不一致**（両辺 size>1 かつ非一致）→ Tiny IR 構築時に即エラー
-* **負のストライド**（未対応）→ Movement 段で拒否
-* **div ガード欠落**（`%` 展開漏れ）→ Poly‑View 生成時の検証で停止
-* **piecewise 爆発**（pad/slice 多用）→ `gist/coalesce/remove_redundancies` を必須実行
-* **非SCoP**（データ依存 index）→ 当該点で Region 境界確定
+1. **Frontend→Tiny**
+   高位演算を最小語彙に正規化。`Conv2D` は `pad + movement(affine) + mul + reduce`。`Attention` は 2 回の `mul+reduce` と行 softmax。
+2. **Tiny→IndexBook**
+   値ごとに **Axis/Domain/AxisMap** を導出。`reshape/view` は**線形化→再分解**。`%` は**div+ガード**。
+3. **ContractionPattern 検出**
+   `Binary(mul)` 直上に `Reduce(sum)` を確認。二入力が Movement 以外を含まないこと。軸比較で共通・縮約軸を同定。
+4. **IndexBook→Poly‑View**
+   SCoP のみ抽出し、アクセスを `pw_multi_aff` に落とす。`pieces` は `union` 化。
+5. **Region 生成**
+   `can_compute_at` と**ハロー量**で融合可否を判定。**出力のみ MemRef**、中間は値SSAのまま。
+6. **Plan 付与**
+   解析ヒント（並列軸／最小バッファ／バリア）を利用し探索空間を 10〜20 点に絞る。
+7. **GPU IR 生成**
+   Plan をテンプレに注入。アーキ分岐と tail predication を実装。
+
+---
+
+# 11. コストモデルとチューニング
+
+* **基本式**
+  `time_est = max( FLOPs/(peak_TF*occ*pipeline_eff),  Bytes/(peak_BW*occ) )`
+* **融合の差分評価**
+  `Δtime = max(ΔFLOPs/(peak_TF*occ*pipeline_eff), ΔBytes/(peak_BW*occ)) + Δocc_time + penalties − saved_bytes/peak_BW`
+  `penalties = fanout_penalty + layout_penalty(TMA/WGMMA, vectorize)`
+* **探索空間（MVP）**: `tile(3–4) × stages{2,3} × warp_tile{2} × vec{4,8,16} × algo_choice（少数）`
+* **STOP 条件**
+
+  * `smem_per_CTA` 推定が上限の **\~80%** 超
+  * `regs_per_thr` 増で **CTA/SM=1** に低下
+  * `vectorize.width` が **16→8/4** に縮小
+  * **SM90**: TMA/WGMMA 要求タイルから外れる
+
+---
+
+# 12. ランタイム／ABI／ShapeSets
+
+* **Graph Signature** を ABI として採用（I/O 役割・可変性・アライン）。
+* **ConstPool**: weights の連続配置と整列。
+* **Memory Arena**: 生存区間解析に基づく再利用。
+* **ShapeSets**: 動的形状をクラスタ化し Plan/実測をキャッシュ。
+* **CUDA Graph**: 形状クラスタごとに 1 個キャプチャし再利用。
+* **RNG（学習）**: counter‑based（Philox系）で副作用制御。
+* **エラー**: SMEM/REG 超過・非アフィン・アライン不整合は**明示診断**。
+
+---
+
+# 13. デバッグ／検証
+
+* **ダンプ**: `--dump=frontend,tiny,indexbook,poly_view,region,plan,gpu,cu`
+* **CPU プレイバック**: Region 内算術を JIT/解釈で実行し数値検証。
+* **精度検証**: FP32 参照と `rtol=1e-3, atol=1e-3` で比較。
+* **測定ログ**: `FLOPs/Bytes/occ/estimate/actual/plan` を CSV 追記。
+
+---
+
+# 14. 失敗条件と診断（Index/isl まわりの規範）
+
+* **Broadcast 不一致**: 右端揃えで size>1 の次元が一致しない → **Tiny 構築時に停止**し左右形状を提示。
+* **負ストライド view**: 未対応 → **Movement 段で拒否**。
+* **`%` 展開のガード欠落**: `reshape/view` で `%` を保持してしまった → **Poly‑View 生成前に検証で停止**。
+* **piecewise 爆発**: `pad/slice` 多用で union が過大 → `gist/coalesce/remove_redundancies` を**強制**。
+* **非SCoP**: データ依存 index → **その点で Region 境界確定**。
+* **資源超過**: `smem_per_CTA` / `regs_per_thr` 超過予測 → Plan を縮退（`stages/warp_tile/vec` を下げる）。
+
+### 代表診断ダンプ
+
+```json
+{
+  "diagnostics":[
+    {"kind":"BroadcastMismatch","at_op":"Binary(mul)","lhs_shape":["M","K","N"],"rhs_shape":["M","K","N'"]},
+    {"kind":"NegativeStrideUnsupported","at_op":"Movement(view)"},
+    {"kind":"MissingDivGuard","at":"Poly-View"},
+    {"kind":"NonSCoP","at_value":"gather_idx","note":"region boundary forced"}
+  ]
+}
+```
+
+---
+
+# 15. 端から端までの例（抜粋リンク）
+
+## 15.1 GEMM + Bias + ReLU
+
+* Frontend 署名＋DAG（§2.2）
+* Tiny（§3）
+* IndexBook（§4.5）
+* Poly‑View（§5.2）
+* Region（§6）
+* Plan（§8.1 例）
+* GPU IR（§9）
+
+## 15.2 Conv 3×3 + SiLU
+
+* Tiny: `pad + movement(affine) + mul + reduce`
+* IndexBook: **piecewise** と **ハロー ±1**
+* Poly‑View: `pattern="conv"`（`affine_offsets` に `(h+kh-1, w+kw-1)`）
+* Region: `local_edges=smem_ring`
+* Plan: `stages=3, warp_tile=64x32, vec=8`
+* GPU IR: SM80 骨格
+
+## 15.3 Attention（causal）
+
+* Tiny: QKᵀ→softmax→V（2 contraction + reduce/ewise）
+* IndexBook: mask の多様ブロードキャストを 0 写像で正規化
+* Poly‑View: `qk_matmul`／`row_softmax`／`pv_matmul`
+* Region: `P` を `materialize:"deferred"`、2 Region 連結
+* Plan: `"attention":"streaming_softmax_2pass"`（SM90 推奨）
+* GPU IR: `tma + mbarrier + wgmma`、tail は行/列で predicated
+
+---
+
+## 付記：本改訂の要点（変更点の明確化）
+
+* **Graph Signature（I/O）を“必須”として明記**（演算ノード化しない）
+* **IndexBook を中心**に、データモデル・不変条件・更新規則・piecewise/floordiv 取り扱いを**厳密化**
+* 各層に**JSON ダンプ例**を多数追加（GEMM/Conv/Attention）
+* **Plan→GPU IR** の対応関係とアーキ分岐/Tail/Epilogue の**規範化**
+* 失敗条件と診断出力の**具体化**
 

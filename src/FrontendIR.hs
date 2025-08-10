@@ -1,66 +1,48 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 
-module FrontendIR where
+module FrontendIR (FrontendIR (..), elmTyToStr, EOpTy (..), Op (..), FTensor (..), codegen) where
 
-import           Tensor (Tensor (..), shapeIdx)
+import           Data.List (intercalate)
 
--- TODO: 本当は、このGADsの出力はTensorであるべき。また、TensorにIRの情報を持たせるべき
-data FrontendIR where
-    Add :: Tensor -> Tensor -> FrontendIR
-    Sub :: Tensor -> Tensor -> FrontendIR
-    Mul :: Tensor -> Tensor -> FrontendIR
-    Div :: Tensor -> Tensor -> FrontendIR
+elmTyToStr :: EOpTy -> String
+elmTyToStr Add = "+"
+elmTyToStr Sub = "-"
+elmTyToStr Mul = "*"
+elmTyToStr Div = "/"
 
-opStr :: FrontendIR -> String
-opStr = \case
-    Add _ _ -> "+"
-    Sub _ _ -> "-"
-    Mul _ _ -> "*"
-    Div _ _ -> "/"
+data EOpTy = Add | Mul | Div | Sub
 
-gridDim :: FrontendIR -> Int
-gridDim (Add (Tensor shape _) _) = shapeIdx shape 0
-gridDim (Sub (Tensor shape _) _) = shapeIdx shape 0
-gridDim (Mul (Tensor shape _) _) = shapeIdx shape 0
-gridDim (Div (Tensor shape _) _) = shapeIdx shape 0
+data Op = ElementWise {name :: String, a :: String, b :: String, c :: String, ty :: EOpTy}
 
-data ElementWise = ElementWise {a :: Tensor, b :: Tensor, ty :: ElmTy}
+data FTensor = FTensor {name :: String, shape :: [Int]}
 
-data ElmTy = AddOp | SubOp | MulOp | DivOp
+data FrontendIR = FrontendIR {tensors :: [FTensor], inputs :: [String], outputs :: [String], ops :: [Op]}
 
-elmTypToStr :: ElmTy -> String
-elmTypToStr AddOp = "+"
-elmTypToStr SubOp = "-"
-elmTypToStr MulOp = "*"
-elmTypToStr DivOp = "/"
+getInputsName :: FrontendIR -> [String]
+getInputsName FrontendIR{inputs} = inputs
 
-data Activation = Activation {a :: Tensor, b :: Tensor, ty :: ActiTy}
+getOutputsName :: FrontendIR -> [String]
+getOutputsName FrontendIR{outputs} = outputs
 
-data ActiTy = Relu | Softmax
-
-data IR = ElmWise ElementWise | Acti Activation
-
-irToOpStr :: IR -> String
-irToOpStr (ElmWise ElementWise{ty}) = elmTypToStr ty
-
-convert :: FrontendIR -> IR
-convert = \case
-    Add a b -> ElmWise ElementWise{a, b, ty = AddOp}
-    Sub a b -> ElmWise ElementWise{a, b, ty = SubOp}
-    Mul a b -> ElmWise ElementWise{a, b, ty = MulOp}
-    Div a b -> ElmWise ElementWise{a, b, ty = DivOp}
-
-getTensorSize :: IR -> Int
-getTensorSize (ElmWise ElementWise{a = Tensor{shape}}) = shapeIdx shape 0
-
-codegen :: IR -> [String]
-codegen ir =
-    let op = irToOpStr ir
-        size = getTensorSize ir
-     in [ "extern \"C\" __global__ void kernel(float *__restrict__ a, float* __restrict__ b, float* __restrict__ c) {"
-        , "  int idx = blockIdx.x * blockDim.x + threadIdx.x;"
-        , "  if (idx < " ++ show size ++ ") c[idx] = a[idx] " ++ op ++ " b[idx];"
+codegen :: FrontendIR -> [String]
+codegen ir@FrontendIR{..} =
+    let inputs = getInputsName ir
+        outputs = getOutputsName ir
+        a = head tensors
+        aShape = a.shape
+        size = head aShape
+        argLists =
+            (map (\name -> "float *__restrict__ " ++ name) inputs)
+                ++ (map (\name -> "float *__restrict__" ++ name) outputs)
+        arguments = intercalate ", " argLists
+        op0 = (head ops).ty
+        opStr = elmTyToStr op0
+     in [ "extern \"C\" __global__ void kernel(" ++ arguments ++ ") {"
+        , "  int idx =  blockIdx.x * blockDim.x + threadIdx.x;"
+        , "  if (idx < " ++ show size ++ ") c[idx] = a[idx] " ++ opStr ++ " b[idx];"
         , "}"
         ]

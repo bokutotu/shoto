@@ -1,8 +1,6 @@
 module Shoto (compile) where
 
-import           FrontendIR (FrontendIR (..), codegen, convert)
+import           FrontendIR (FrontendIR (..), codegen)
 
 compile :: FrontendIR -> [String]
-compile fir =
-    let ir = convert fir
-     in codegen ir
+compile = codegen

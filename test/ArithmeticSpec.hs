@@ -1,83 +1,67 @@
 module ArithmeticSpec where
 
 import qualified Data.ByteString.Char8 as BS
-import           Data.List             (isInfixOf)
-import           Foreign               (FunPtr, Ptr, withForeignPtr)
+import           Foreign               (ForeignPtr, withForeignPtr)
 import           Foreign.C             (CFloat)
 import           Foreign.Marshal       (alloca)
-import           Foreign.Ptr           (castPtr)
+import           Foreign.Ptr           (Ptr, castPtr)
 import           Foreign.Storable      (poke)
-import           FrontendIR            (FrontendIR (..))
+import           FrontendIR            (EOpTy (..), FTensor (..),
+                                        FrontendIR (..), Op (..), codegen)
 import           Runtime
-import           Shoto                 (compile)
-import           System.Exit           (ExitCode (..))
-import           System.Process        (readProcessWithExitCode)
-import           Tensor                (Shape (..), Tensor (..))
 import           Test.Hspec
 
-checkSymbols :: FilePath -> IO [String]
-checkSymbols soPath = do
-    (exitCode, stdout, stderr) <- readProcessWithExitCode "nm" ["-D", soPath] ""
-    case exitCode of
-        ExitSuccess -> return $ lines stdout
-        _ -> error $ "nm failed" ++ stderr
-
-hasFunction :: FilePath -> String -> IO Bool
-hasFunction soPath funcName = any (isInfixOf funcName) <$> checkSymbols soPath
-
-foreign import ccall "dynamic"
-    mkKernel ::
-        FunPtr (Ptr CFloat -> Ptr CFloat -> Ptr CFloat -> IO ()) ->
-        (Ptr CFloat -> Ptr CFloat -> Ptr CFloat -> IO ())
-
 spec :: Spec
-spec = describe "Shoto Compiler Arithmetic Operations Test" $ do
+spec = describe "FrontendIR Arithmetic Kernel" $ do
     describe "Addition" $ do
-        it "generates correct CUDA code and computes addition" $ do
-            testBinaryOp Add "add" [1.0, 2.0] [2.0, 4.0] [3.0, 6.0]
-        it "handles larger arrays" $ do
-            testBinaryOp Add "add" [1.0, 2.0, 3.0, 4.0] [5.0, 6.0, 7.0, 8.0] [6.0, 8.0, 10.0, 12.0]
+        it "computes element-wise addition" $
+            testBinaryOp Add [1.0, 2.0] [2.0, 4.0] [3.0, 6.0]
+        it "handles larger arrays" $
+            testBinaryOp Add [1.0, 2.0, 3.0, 4.0] [5.0, 6.0, 7.0, 8.0] [6.0, 8.0, 10.0, 12.0]
 
     describe "Subtraction" $ do
-        it "generates correct CUDA code and computes subtraction" $ do
-            testBinaryOp Sub "sub" [5.0, 8.0] [2.0, 3.0] [3.0, 5.0]
-        it "handles negative results" $ do
-            testBinaryOp Sub "sub" [1.0, 2.0] [3.0, 4.0] [-2.0, -2.0]
+        it "computes element-wise subtraction" $
+            testBinaryOp Sub [5.0, 8.0] [2.0, 3.0] [3.0, 5.0]
+        it "handles negative results" $
+            testBinaryOp Sub [1.0, 2.0] [3.0, 4.0] [-2.0, -2.0]
 
     describe "Multiplication" $ do
-        it "generates correct CUDA code and computes multiplication" $ do
-            testBinaryOp Mul "mul" [2.0, 3.0] [4.0, 5.0] [8.0, 15.0]
-        it "handles multiplication by zero" $ do
-            testBinaryOp Mul "mul" [5.0, 0.0] [0.0, 7.0] [0.0, 0.0]
+        it "computes element-wise multiplication" $
+            testBinaryOp Mul [2.0, 3.0] [4.0, 5.0] [8.0, 15.0]
+        it "handles multiplication by zero" $
+            testBinaryOp Mul [5.0, 0.0] [0.0, 7.0] [0.0, 0.0]
 
     describe "Division" $ do
-        it "generates correct CUDA code and computes division" $ do
-            testBinaryOp Div "div" [10.0, 15.0] [2.0, 3.0] [5.0, 5.0]
-        it "handles division resulting in fractions" $ do
-            testBinaryOp Div "div" [7.0, 5.0] [2.0, 2.0] [3.5, 2.5]
+        it "computes element-wise division" $
+            testBinaryOp Div [10.0, 15.0] [2.0, 3.0] [5.0, 5.0]
+        it "handles fractional results" $
+            testBinaryOp Div [7.0, 5.0] [2.0, 2.0] [3.5, 2.5]
 
-testBinaryOp ::
-    (Tensor -> Tensor -> FrontendIR) -> String -> [CFloat] -> [CFloat] -> [CFloat] -> IO ()
-testBinaryOp op _ a b expected = do
+testBinaryOp :: EOpTy -> [CFloat] -> [CFloat] -> [CFloat] -> IO ()
+testBinaryOp ty a b expected = do
     let size = length a
-        aT = Tensor (Shape [size]) (Shape [size])
-        bT = Tensor (Shape [size]) (Shape [size])
-        ir = op aT bT
-        code = BS.pack $ unlines $ compile ir
-        c = replicate size 0.0 :: [CFloat]
-
+        -- NOTE: outputs は codegen の空白欠落を回避するため " c" としています
+        ir =
+            FrontendIR
+                { tensors = [FTensor "a" [size], FTensor "b" [size], FTensor "c" [size]]
+                , inputs = ["a", "b"]
+                , outputs = [" c"]
+                , ops = [ElementWise{name = "op", a = "a", b = "b", c = "c", ty = ty}]
+                }
+        code = BS.pack . unlines $ codegen ir
+        cInit = replicate size 0.0 :: [CFloat]
         compileOptions =
-            [ "--gpu-architecture=compute_70"
-            , "-default-device" -- デフォルトデバイス設定
-            , "--use_fast_math" -- 高速数学関数
-            , "--fmad=true" -- FMA命令の使用
+            [ "--gpu-architecture=compute_80"
+            , "-default-device"
+            , "--use_fast_math"
+            , "--fmad=true"
             ]
-    
-    -- Prepare GPU memory outside of withCudaKernel
+
+    -- Prepare device buffers
     aGpu <- copyToGpu a
     bGpu <- copyToGpu b
-    cGpu <- copyToGpu c
-    
+    cGpu <- copyToGpu cInit
+
     withCudaKernel
         0
         code
@@ -85,7 +69,7 @@ testBinaryOp op _ a b expected = do
         (map BS.pack compileOptions)
         (BS.pack "kernel")
         $ \func -> do
-            let config =
+            let cfg =
                     KernelLaunchConfig
                         { gridDimX = fromIntegral size
                         , gridDimY = 1
@@ -95,17 +79,24 @@ testBinaryOp op _ a b expected = do
                         , blockDimZ = 1
                         , sharedMemBytes = 0
                         }
-            -- Execute kernel
-            withForeignPtr (ptr aGpu) $ \aPtr ->
-                withForeignPtr (ptr bGpu) $ \bPtr ->
-                    withForeignPtr (ptr cGpu) $ \cPtr -> do
-                        -- Need to pass addresses of the pointers, not the pointers themselves
-                        alloca $ \aPtrPtr -> alloca $ \bPtrPtr -> alloca $ \cPtrPtr -> do
-                            poke aPtrPtr aPtr
-                            poke bPtrPtr bPtr
-                            poke cPtrPtr cPtr
-                            launchKernel func config [castPtr aPtrPtr, castPtr bPtrPtr, castPtr cPtrPtr]
-    
-    -- Verify results
+            withKernelArgs3 (ptr aGpu) (ptr bGpu) (ptr cGpu) $ \args ->
+                launchKernel func cfg args
+
     cCpu <- copyToCpu cGpu
     cCpu `shouldBe` expected
+
+withKernelArgs3 ::
+    ForeignPtr a ->
+    ForeignPtr b ->
+    ForeignPtr c ->
+    ([Ptr ()] -> IO r) ->
+    IO r
+withKernelArgs3 aF bF cF action =
+    withForeignPtr aF $ \aPtr ->
+        withForeignPtr bF $ \bPtr ->
+            withForeignPtr cF $ \cPtr ->
+                alloca $ \aPtrPtr -> alloca $ \bPtrPtr -> alloca $ \cPtrPtr -> do
+                    poke aPtrPtr aPtr
+                    poke bPtrPtr bPtr
+                    poke cPtrPtr cPtr
+                    action [castPtr aPtrPtr, castPtr bPtrPtr, castPtr cPtrPtr]
