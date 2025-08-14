@@ -37,7 +37,7 @@ data ReduceOp = Sum | Max | Min
 data TinyOp
     = Movement MovementOp
     | ElementWise ElementWiseOp
-    | Reduce ReduceOp [Int]
+    | Reduce ReduceOp (Maybe Int)
 
 data TinyNode = Input Shape | Op TinyOp
 
@@ -81,8 +81,58 @@ codegenElementWise op _ =
         Log -> "logf"
         Root -> "sqrtf"
 
-codegenReduce :: ReduceOp -> Shape -> [String]
-codegenReduce = undefined
+codegenReduce :: ReduceOp -> Maybe Int -> Shape -> [String]
+codegenReduce op maybeAxis shape =
+    case maybeAxis of
+        Nothing -> generateFullReduce op
+        Just axis -> generatePartialReduce op axis shape
+
+generateFullReduce :: ReduceOp -> [String]
+generateFullReduce op =
+    [ "extern \"C\" __global__ void kernel(float* in, float* out, int n) {"
+    , "  if (blockIdx.x == 0 && threadIdx.x == 0) {"
+    , "    float acc = " ++ initVal op ++ ";"
+    , "    for (int i = 0; i < n; i++) {"
+    , "      " ++ accumStatement op "acc" "in[i]"
+    , "    }"
+    , "    *out = acc;"
+    , "  }"
+    , "}"
+    ]
+
+generatePartialReduce :: ReduceOp -> Int -> Shape -> [String]
+generatePartialReduce op axis shape =
+    [ "extern \"C\" __global__ void kernel("
+    , "    float* in,"
+    , "    float* out,"
+    , "    int outer_stride,"
+    , "    int reduce_size,"
+    , "    int inner_size,"
+    , "    int out_size"
+    , ") {"
+    , "  int tid = blockIdx.x * blockDim.x + threadIdx.x;"
+    , "  "
+    , "  if (tid < out_size) {"
+    , "    float acc = " ++ initVal op ++ ";"
+    , "    int in_base = (tid / inner_size) * outer_stride + (tid % inner_size);"
+    , "    "
+    , "    for (int i = 0; i < reduce_size; i++) {"
+    , "      " ++ accumStatement op "acc" "in[in_base + i * inner_size]"
+    , "    }"
+    , "    out[tid] = acc;"
+    , "  }"
+    , "}"
+    ]
+
+initVal :: ReduceOp -> String
+initVal Sum = "0.0f"
+initVal Max = "-1e38f" -- 十分小さい値
+initVal Min = "1e38f" -- 十分大きい値
+
+accumStatement :: ReduceOp -> String -> String -> String
+accumStatement Sum acc val = acc ++ " = " ++ acc ++ " + " ++ val ++ ";"
+accumStatement Max acc val = acc ++ " = fmaxf(" ++ acc ++ ", " ++ val ++ ");"
+accumStatement Min acc val = acc ++ " = fminf(" ++ acc ++ ", " ++ val ++ ");"
 
 -- 今後はこのレイヤーではコード生成は行われないが、中間生成ぶつとしてTinyIRからコード生成を行う
 -- また、TinyIRでは現在Opsは一つの場合のみを想定
