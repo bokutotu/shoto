@@ -12,6 +12,7 @@ build-type:    Simple
 library
     exposed-modules:
         FrontendIR
+        Graph
         Runtime
         Shoto
         TinyIR
@@ -32,7 +33,8 @@ library
         bytestring,
         process,
         unix,
-        containers
+        containers,
+        mtl
 
 test-suite shoto-test
     type:               exitcode-stdio-1.0
@@ -40,6 +42,7 @@ test-suite shoto-test
     build-tool-depends: hspec-discover:hspec-discover
     hs-source-dirs:     test
     other-modules:      ArithmeticSpec
+                      , TinyIRSpec
     default-language:   GHC2024
     extra-libraries:    cudart
                       , cuda
