@@ -11,7 +11,6 @@ build-type:    Simple
 
 library
     exposed-modules:
-        Executor
         FrontendIR
         IR
         Runtime
@@ -44,7 +43,6 @@ test-suite shoto-test
     hs-source-dirs:     test
     other-modules:      ArithmeticSpec
                         TinyIRSpec
-                        ExecutorSpec
     default-language:   GHC2024
     extra-libraries:    cudart
                       , cuda
