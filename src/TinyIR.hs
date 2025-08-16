@@ -1,10 +1,28 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase            #-}
 
-module TinyIR where
+module TinyIR
+    ( -- Types
+      Dim (..)
+    , Shape
+    , Bound (..)
+    , SliceSpec (..)
+    , MovementOp (..)
+    , BinaryTy (..)
+    , UnaryTy (..)
+    , ElementWiseOp (..)
+    , ReduceOp (..)
+    , TinyOp (..)
+    , Input (..)
+    , TinyIR
+      -- Functions
+    , codegenMovement
+    , codegenElementWise
+    , codegenReduce
+    ) where
 
-import qualified Data.Set as S
-import           Graph    (Graph, Node (..), filterGraph)
+import qualified Data.ByteString.Char8 as BS
+import           IR                    (IR)
 
 data Dim = Dyn String | Static Int
 
@@ -39,38 +57,35 @@ data TinyOp
     | ElementWise ElementWiseOp
     | Reduce ReduceOp (Maybe Int)
 
-data TinyNode = Input Shape | Op TinyOp
+data Input = Input {shape :: Shape}
 
-type TinyIR = Graph TinyNode
+type TinyIR = IR Input TinyOp
 
-filterOps :: TinyIR -> S.Set (Node TinyNode)
-filterOps = filterGraph inner
-  where
-    inner (Op _) = True
-    inner _ = False
-
-codegenMovement :: MovementOp -> Shape -> [String]
+-- 今後より低いレイヤーにlowingするので、一旦undef
+codegenMovement :: MovementOp -> Shape -> BS.ByteString
 codegenMovement = undefined
 
-codegenElementWise :: ElementWiseOp -> [Shape] -> [String]
+codegenElementWise :: ElementWiseOp -> [Shape] -> BS.ByteString
 codegenElementWise op _ =
     case op of
         Binary ty ->
-            [ "extern \"C\" __global__ void kernel(float* a, float* b, float* out, int n) {"
-            , "  int idx = blockIdx.x * blockDim.x + threadIdx.x;"
-            , "  if (idx < n) {"
-            , "    out[idx] = a[idx] " ++ opBiStr ty ++ " b[idx];"
-            , "  }"
-            , "}"
-            ]
+            BS.pack $ unlines
+                [ "extern \"C\" __global__ void kernel(float *__restrict__ a, float *__restrict__ b, float *__restrict__ out, int n) {"
+                , "  int idx = blockIdx.x * blockDim.x + threadIdx.x;"
+                , "  if (idx < n) {"
+                , "    out[idx] = a[idx] " ++ opBiStr ty ++ " b[idx];"
+                , "  }"
+                , "}"
+                ]
         Unary ty ->
-            [ "__global__ void unary_kernel(float* in, float* out, int n) {"
-            , "  int idx = blockIdx.x * blockDim.x + threadIdx.x;"
-            , "  if (idx < n) {"
-            , "    out[idx] = " ++ opUnStr ty ++ "(in[idx]);"
-            , "  }"
-            , "}"
-            ]
+            BS.pack $ unlines
+                [ "__global__ void unary_kernel(float *__restrict__ in, float *__restrict__ out, int n) {"
+                , "  int idx = blockIdx.x * blockDim.x + threadIdx.x;"
+                , "  if (idx < n) {"
+                , "    out[idx] = " ++ opUnStr ty ++ "(in[idx]);"
+                , "  }"
+                , "}"
+                ]
   where
     opBiStr = \case
         Add -> "+"
@@ -81,48 +96,50 @@ codegenElementWise op _ =
         Log -> "logf"
         Root -> "sqrtf"
 
-codegenReduce :: ReduceOp -> Maybe Int -> Shape -> [String]
+codegenReduce :: ReduceOp -> Maybe Int -> Shape -> BS.ByteString
 codegenReduce op maybeAxis shape =
     case maybeAxis of
         Nothing -> generateFullReduce op
         Just axis -> generatePartialReduce op axis shape
 
-generateFullReduce :: ReduceOp -> [String]
+generateFullReduce :: ReduceOp -> BS.ByteString
 generateFullReduce op =
-    [ "extern \"C\" __global__ void kernel(float* in, float* out, int n) {"
-    , "  if (blockIdx.x == 0 && threadIdx.x == 0) {"
-    , "    float acc = " ++ initVal op ++ ";"
-    , "    for (int i = 0; i < n; i++) {"
-    , "      " ++ accumStatement op "acc" "in[i]"
-    , "    }"
-    , "    *out = acc;"
-    , "  }"
-    , "}"
-    ]
+    BS.pack $ unlines
+        [ "extern \"C\" __global__ void kernel(float *__restrict__ in, float *__restrict__ out, int n) {"
+        , "  if (blockIdx.x == 0 && threadIdx.x == 0) {"
+        , "    float acc = " ++ initVal op ++ ";"
+        , "    for (int i = 0; i < n; i++) {"
+        , "      " ++ accumStatement op "acc" "in[i]"
+        , "    }"
+        , "    *out = acc;"
+        , "  }"
+        , "}"
+        ]
 
-generatePartialReduce :: ReduceOp -> Int -> Shape -> [String]
+generatePartialReduce :: ReduceOp -> Int -> Shape -> BS.ByteString
 generatePartialReduce op axis shape =
-    [ "extern \"C\" __global__ void kernel("
-    , "    float* in,"
-    , "    float* out,"
-    , "    int outer_stride,"
-    , "    int reduce_size,"
-    , "    int inner_size,"
-    , "    int out_size"
-    , ") {"
-    , "  int tid = blockIdx.x * blockDim.x + threadIdx.x;"
-    , "  "
-    , "  if (tid < out_size) {"
-    , "    float acc = " ++ initVal op ++ ";"
-    , "    int in_base = (tid / inner_size) * outer_stride + (tid % inner_size);"
-    , "    "
-    , "    for (int i = 0; i < reduce_size; i++) {"
-    , "      " ++ accumStatement op "acc" "in[in_base + i * inner_size]"
-    , "    }"
-    , "    out[tid] = acc;"
-    , "  }"
-    , "}"
-    ]
+    BS.pack $ unlines
+        [ "extern \"C\" __global__ void kernel("
+        , "    float *__restrict__ in,"
+        , "    float *__restrict__ out,"
+        , "    int outer_stride,"
+        , "    int reduce_size,"
+        , "    int inner_size,"
+        , "    int out_size"
+        , ") {"
+        , "  int tid = blockIdx.x * blockDim.x + threadIdx.x;"
+        , "  "
+        , "  if (tid < out_size) {"
+        , "    float acc = " ++ initVal op ++ ";"
+        , "    int in_base = (tid / inner_size) * outer_stride + (tid % inner_size);"
+        , "    "
+        , "    for (int i = 0; i < reduce_size; i++) {"
+        , "      " ++ accumStatement op "acc" "in[in_base + i * inner_size]"
+        , "    }"
+        , "    out[tid] = acc;"
+        , "  }"
+        , "}"
+        ]
 
 initVal :: ReduceOp -> String
 initVal Sum = "0.0f"
@@ -133,9 +150,3 @@ accumStatement :: ReduceOp -> String -> String -> String
 accumStatement Sum acc val = acc ++ " = " ++ acc ++ " + " ++ val ++ ";"
 accumStatement Max acc val = acc ++ " = fmaxf(" ++ acc ++ ", " ++ val ++ ");"
 accumStatement Min acc val = acc ++ " = fminf(" ++ acc ++ ", " ++ val ++ ");"
-
--- 今後はこのレイヤーではコード生成は行われないが、中間生成ぶつとしてTinyIRからコード生成を行う
--- また、TinyIRでは現在Opsは一つの場合のみを想定
--- shape validationも一切なし
-codegenTiny :: TinyIR -> [String]
-codegenTiny = undefined

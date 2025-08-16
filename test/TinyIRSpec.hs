@@ -38,7 +38,7 @@ spec = describe "TinyIR Codegen" $ do
 testBinaryOp :: BinaryTy -> [CFloat] -> [CFloat] -> [CFloat] -> IO ()
 testBinaryOp ty a b expected = do
     let size = length a
-        code = BS.pack . unlines $ codegenElementWise (Binary ty) []
+        code = codegenElementWise (Binary ty) []
         cInit = replicate size 0.0 :: [CFloat]
         compileOptions =
             [ "--gpu-architecture=compute_80"
@@ -78,7 +78,7 @@ testBinaryOp ty a b expected = do
 testReduceAll :: ReduceOp -> [CFloat] -> CFloat -> IO ()
 testReduceAll op input expected = do
     let size = length input
-        code = BS.pack . unlines $ codegenReduce op Nothing []
+        code = codegenReduce op Nothing []
         compileOptions =
             [ "--gpu-architecture=compute_80"
             , "-default-device"
@@ -121,7 +121,7 @@ testReduceAxis op axis shape input expected = do
         innerSize = product [n | (i, Static n) <- zip [0..] shape, i > axis]
         outerStride = reduceSize * innerSize
         
-        code = BS.pack . unlines $ codegenReduce op (Just axis) shape
+        code = codegenReduce op (Just axis) shape
         compileOptions =
             [ "--gpu-architecture=compute_80"
             , "-default-device"
