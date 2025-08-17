@@ -29,17 +29,18 @@ module Runtime (
 ) where
 
 import           Control.Monad          (unless, when)
+import           Control.Monad.Cont     (ContT (ContT, runContT))
 import qualified Data.ByteString.Char8  as BS
 import           Data.ByteString.Unsafe (unsafeUseAsCString)
 import           Data.IORef
 import qualified Data.Map               as M
 import           Foreign                (Storable (..), alloca, allocaArray,
                                          allocaBytes, castPtr, malloc,
-                                         peekArray, poke, withArray,
-                                         withForeignPtr)
+                                         peekArray, poke, withArray)
 import           Foreign.C.String
 import           Foreign.C.Types
-import           Foreign.ForeignPtr
+import           Foreign.ForeignPtr     (ForeignPtr, castForeignPtr,
+                                         newForeignPtr, withForeignPtr)
 import           Foreign.Ptr
 import           Internal.FFI
 import           IR                     (Node (..), ValueId)
@@ -47,6 +48,11 @@ import           System.IO.Unsafe       (unsafePerformIO)
 import qualified TinyIR                 as TIR
 
 data GpuPtr a = GpuPtr {ptr :: ForeignPtr a, size :: Int}
+
+withGpuPointers :: (Traversable t) => t (GpuPtr a) -> (t (Ptr ()) -> IO b) -> IO b
+withGpuPointers containers action = runContT (traverse convert containers) action
+  where
+    convert gpu = ContT $ \cont -> withForeignPtr (ptr gpu) (cont . castPtr)
 
 allocGpu :: forall a. (Storable a) => Int -> IO (GpuPtr a)
 allocGpu size = do
@@ -294,10 +300,11 @@ compileGraph ir outputIds = do
 
 -- 演算に応じたCUDAコード生成
 generateCudaCode :: TIR.TinyOp -> [ValueId] -> TIR.TinyIR -> BS.ByteString
-generateCudaCode (TIR.ElementWise op) inputs ir =
+generateCudaCode (TIR.ElementWise op) _ _ =
     -- 入力のshapeを取得（今は固定で10と仮定）
+    -- TODO: ちゃんと入力を使用するように修正
     TIR.codegenElementWise op []
-generateCudaCode (TIR.Reduce op axis) inputs ir =
+generateCudaCode (TIR.Reduce op axis) _ _ =
     TIR.codegenReduce op axis []
 generateCudaCode _ _ _ = error "Unsupported operation"
 
@@ -309,7 +316,7 @@ executeGraph ir functions inputs (outputId, output) = do
         -- コンパイル済み関数を取得
         case M.lookup outputId functions of
             Nothing -> error "Function not compiled"
-            Just (modul, func) -> do
+            Just (_, func) -> do
                 -- モジュールとファンクションのペアを受け取る
                 -- 演算の入力を特定
                 case M.lookup outputId ir of
@@ -339,114 +346,109 @@ executeGraph ir functions inputs (outputId, output) = do
 -- Unary演算用のカーネル起動
 launchUnaryKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> IO ()
 launchUnaryKernel func input output = do
-    withForeignPtr (ptr input) $ \pIn ->
-        withForeignPtr (ptr output) $ \pOut -> do
-            let n = size output
-                blockSize = 256
-                gridSize = (n + blockSize - 1) `div` blockSize
-                config =
-                    KernelLaunchConfig
-                        { gridDimX = fromIntegral gridSize
-                        , gridDimY = 1
-                        , gridDimZ = 1
-                        , blockDimX = fromIntegral blockSize
-                        , blockDimY = 1
-                        , blockDimZ = 1
-                        , sharedMemBytes = 0
-                        }
-            -- カーネル引数の準備
-            alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
-                poke inPtr pIn
-                poke outPtr pOut
-                poke nPtr (fromIntegral n :: CInt)
-                let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
-                launchKernel func config args
+    withGpuPointers [input, output] $ \[pIn, pOut] -> do
+        let n = size output
+            blockSize = 256
+            gridSize = (n + blockSize - 1) `div` blockSize
+            config =
+                KernelLaunchConfig
+                    { gridDimX = fromIntegral gridSize
+                    , gridDimY = 1
+                    , gridDimZ = 1
+                    , blockDimX = fromIntegral blockSize
+                    , blockDimY = 1
+                    , blockDimZ = 1
+                    , sharedMemBytes = 0
+                    }
+        -- カーネル引数の準備
+        alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
+            poke inPtr pIn
+            poke outPtr pOut
+            poke nPtr (fromIntegral n :: CInt)
+            let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
+            launchKernel func config args
 
 -- 全要素Reduce用のカーネル起動
 launchReduceAllKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> IO ()
 launchReduceAllKernel func input output = do
-    withForeignPtr (ptr input) $ \pIn ->
-        withForeignPtr (ptr output) $ \pOut -> do
-            let n = size input
-                -- 単一スレッドで実行（TODO: 並列化）
-                config =
-                    KernelLaunchConfig
-                        { gridDimX = 1
-                        , gridDimY = 1
-                        , gridDimZ = 1
-                        , blockDimX = 1
-                        , blockDimY = 1
-                        , blockDimZ = 1
-                        , sharedMemBytes = 0
-                        }
-            -- カーネル引数の準備
-            alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
-                poke inPtr pIn
-                poke outPtr pOut
-                poke nPtr (fromIntegral n :: CInt)
-                let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
-                launchKernel func config args
+    withGpuPointers [input, output] $ \[pIn, pOut] -> do
+        let n = size input
+            -- 単一スレッドで実行（TODO: 並列化）
+            config =
+                KernelLaunchConfig
+                    { gridDimX = 1
+                    , gridDimY = 1
+                    , gridDimZ = 1
+                    , blockDimX = 1
+                    , blockDimY = 1
+                    , blockDimZ = 1
+                    , sharedMemBytes = 0
+                    }
+        -- カーネル引数の準備
+        alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
+            poke inPtr pIn
+            poke outPtr pOut
+            poke nPtr (fromIntegral n :: CInt)
+            let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
+            launchKernel func config args
 
 -- 軸指定Reduce用のカーネル起動
 launchReduceAxisKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> Int -> TIR.Shape -> IO ()
 launchReduceAxisKernel func input output axis shape = do
-    withForeignPtr (ptr input) $ \pIn ->
-        withForeignPtr (ptr output) $ \pOut -> do
-            let outputSize = size output
-                reduceSize = case shape !! axis of
-                    TIR.Static n -> n
-                    _ -> error "Dynamic shape not supported"
-                innerSize = product [n | (i, TIR.Static n) <- zip [0 ..] shape, i > axis]
-                outerStride = reduceSize * innerSize
-                blockSize = 256
-                gridSize = (outputSize + blockSize - 1) `div` blockSize
-                config =
-                    KernelLaunchConfig
-                        { gridDimX = fromIntegral gridSize
-                        , gridDimY = 1
-                        , gridDimZ = 1
-                        , blockDimX = fromIntegral blockSize
-                        , blockDimY = 1
-                        , blockDimZ = 1
-                        , sharedMemBytes = 0
-                        }
-            -- カーネル引数の準備（6引数）
-            alloca $ \inPtr -> alloca $ \outPtr ->
-                alloca $ \n1Ptr -> alloca $ \n2Ptr -> alloca $ \n3Ptr -> alloca $ \n4Ptr -> do
-                    poke inPtr pIn
-                    poke outPtr pOut
-                    poke n1Ptr (fromIntegral outerStride :: CInt)
-                    poke n2Ptr (fromIntegral reduceSize :: CInt)
-                    poke n3Ptr (fromIntegral innerSize :: CInt)
-                    poke n4Ptr (fromIntegral outputSize :: CInt)
-                    let args = [castPtr inPtr, castPtr outPtr, castPtr n1Ptr, castPtr n2Ptr, castPtr n3Ptr, castPtr n4Ptr]
-                    launchKernel func config args
+    withGpuPointers [input, output] $ \[pIn, pOut] -> do
+        let outputSize = size output
+            reduceSize = case shape !! axis of
+                TIR.Static n -> n
+                _ -> error "Dynamic shape not supported"
+            innerSize = product [n | (i, TIR.Static n) <- zip [0 ..] shape, i > axis]
+            outerStride = reduceSize * innerSize
+            blockSize = 256
+            gridSize = (outputSize + blockSize - 1) `div` blockSize
+            config =
+                KernelLaunchConfig
+                    { gridDimX = fromIntegral gridSize
+                    , gridDimY = 1
+                    , gridDimZ = 1
+                    , blockDimX = fromIntegral blockSize
+                    , blockDimY = 1
+                    , blockDimZ = 1
+                    , sharedMemBytes = 0
+                    }
+        -- カーネル引数の準備（6引数）
+        alloca $ \inPtr -> alloca $ \outPtr ->
+            alloca $ \n1Ptr -> alloca $ \n2Ptr -> alloca $ \n3Ptr -> alloca $ \n4Ptr -> do
+                poke inPtr pIn
+                poke outPtr pOut
+                poke n1Ptr (fromIntegral outerStride :: CInt)
+                poke n2Ptr (fromIntegral reduceSize :: CInt)
+                poke n3Ptr (fromIntegral innerSize :: CInt)
+                poke n4Ptr (fromIntegral outputSize :: CInt)
+                let args = [castPtr inPtr, castPtr outPtr, castPtr n1Ptr, castPtr n2Ptr, castPtr n3Ptr, castPtr n4Ptr]
+                launchKernel func config args
 
 -- Binary演算用のカーネル起動
 launchBinaryKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> GpuPtr a -> IO ()
 launchBinaryKernel func input1 input2 output = do
-    withForeignPtr (ptr input1) $ \p1 ->
-        withForeignPtr (ptr input2) $ \p2 ->
-            withForeignPtr (ptr output) $ \pOut -> do
-                let n = size output
-                    blockSize = 256
-                    gridSize = (n + blockSize - 1) `div` blockSize
-                    config =
-                        KernelLaunchConfig
-                            { gridDimX = fromIntegral gridSize
-                            , gridDimY = 1
-                            , gridDimZ = 1
-                            , blockDimX = fromIntegral blockSize
-                            , blockDimY = 1
-                            , blockDimZ = 1
-                            , sharedMemBytes = 0
-                            }
-                -- カーネル引数の準備
-                -- CUDAカーネルの引数は、値へのポインタのポインタとして渡す必要がある
-                alloca $ \aPtr -> alloca $ \bPtr -> alloca $ \cPtr -> alloca $ \nPtr -> do
-                    poke aPtr p1
-                    poke bPtr p2
-                    poke cPtr pOut
-                    poke nPtr (fromIntegral n :: CInt)
-                    let args = [castPtr aPtr, castPtr bPtr, castPtr cPtr, castPtr nPtr]
-                    launchKernel func config args
+    withGpuPointers [input1, input2, output] $ \[p1, p2, pOut] -> do
+        let n = size output
+            blockSize = 256
+            gridSize = (n + blockSize - 1) `div` blockSize
+            config =
+                KernelLaunchConfig
+                    { gridDimX = fromIntegral gridSize
+                    , gridDimY = 1
+                    , gridDimZ = 1
+                    , blockDimX = fromIntegral blockSize
+                    , blockDimY = 1
+                    , blockDimZ = 1
+                    , sharedMemBytes = 0
+                    }
+        -- カーネル引数の準備
+        -- CUDAカーネルの引数は、値へのポインタのポインタとして渡す必要がある
+        alloca $ \aPtr -> alloca $ \bPtr -> alloca $ \cPtr -> alloca $ \nPtr -> do
+            poke aPtr p1
+            poke bPtr p2
+            poke cPtr pOut
+            poke nPtr (fromIntegral n :: CInt)
+            let args = [castPtr aPtr, castPtr bPtr, castPtr cPtr, castPtr nPtr]
+            launchKernel func config args
