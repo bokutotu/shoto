@@ -35,15 +35,15 @@ import           Data.ByteString.Unsafe (unsafeUseAsCString)
 import           Data.IORef
 import qualified Data.Map               as M
 import           Foreign                (Storable (..), alloca, allocaArray,
-                                         allocaBytes, castPtr, malloc,
-                                         peekArray, poke, withArray)
+                                         allocaBytes, malloc, peekArray, poke,
+                                         withArray)
 import           Foreign.C.String
 import           Foreign.C.Types
 import           Foreign.ForeignPtr     (ForeignPtr, castForeignPtr,
                                          newForeignPtr, withForeignPtr)
 import           Foreign.Ptr
 import           Internal.FFI
-import           IR                     (Node (..), ValueId)
+import           IR                     (Node (..), ValueId (..))
 import           System.IO.Unsafe       (unsafePerformIO)
 import qualified TinyIR                 as TIR
 
@@ -336,7 +336,7 @@ executeGraph ir functions inputs (outputId, output) = do
                                 launchReduceAllKernel func input1 output
                             (TIR.Reduce _ (Just axis), Just [input1]) ->
                                 -- 軸指定Reduce
-                                case M.lookup 0 ir of
+                                case M.lookup (ValueId 0) ir of
                                     Just (Input (TIR.Input shape)) ->
                                         launchReduceAxisKernel func input1 output axis shape
                                     _ -> error "Cannot determine input shape for axis reduction"

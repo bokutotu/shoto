@@ -279,36 +279,276 @@
 
 ---
 
-# 6. Region Buffer SSA
+# 6. Region Buffer SSA（改訂：明示 Broadcast/Transpose + SRNF）
 
-## 6.1 役割と性質
+## 6.1 役割と境界
 
-* **Region ≒ 1 カーネル**。
-* **出力のみ MemRef** を持ち、内部は値SSA。
-* `mul+reduce + epilogue` は**同一 Region で融合**し、acc に直接適用。
-* 出力 `materialize` は `deferred|gmem`（直後消費なら `deferred`）。
+* **目的**: IndexBook で確定した **軸・領域（Where）**を、**非物質化の最小語彙**で**純関数 SSA**に落とし、以降の Plan/GPU 層が**推測ゼロ**で実装判断できる形にする。
+* **Region = 1 カーネル**（不変）。Region 内は**副作用なし**。**出力のみ MemRef**（`yield` で書出す）。
+* **語彙（最小集合）**:
 
-### 代表ダンプ（GEMM+Epilogue 融合）
+  * **Read**（IndexBook の AxisMap に基づく論理読取り）
+  * **Unary / Binary**（要素演算）
+  * **Select**（境界/尾部の predication）
+  * **Reduce**（軸付き縮約；acc\_dtype 指定）
+  * **BroadcastInDim**（非物質化の明示ブロードキャスト）
+  * **Transpose**（非物質化の明示転置）
+* **非目標**: 高位パターン名（matmul/conv/attention）を **RB‑SSA には持ち込まない**。パターン検知は Poly‑View（解析専用）。
+
+---
+
+## 6.2 値モデルと IR 定義
+
+### 6.2.1 Region ヘッダ
+
+* `iters`: 出力空間の反復軸（IndexBook の**連番軸名**を踏襲、`kind=iter`）。
+* `inputs`: 読取り専用 `MemRef{shape, alignment, noalias}`。
+* `outputs`: 書込み `MemRef{shape, alignment, noalias, materialize ∈ {"gmem","deferred"}}`。
+
+### 6.2.2 式（Expr）
+
+* `Read(tensor, map)`
+  IndexBook の AxisMap（アフィン+floordiv）で **アドレスのみ**決まる論理読取り。
+* `Unary(fn, x)` / `Binary(fn, x, y)`
+  要素演算。**Binary の前に型検査**を行い、必要なら `BroadcastInDim` を**挿入**（§6.3）。
+* `Select(pred, then, else)`
+  piecewise/pad/tail を **predication** で表現。`then/else` は同型。`neutral` は Reduce の op に依存。
+* `Reduce(op, axes, init, dtype, body)`
+  `op ∈ {sum,max,min}`。`axes` は局所導入（IndexBook の `reduce_axes` に整合）。`dtype` は acc 型（例：`fp32`）。
+* `BroadcastInDim(operand, result_shape, broadcast_dimensions[])`
+  **非物質化**のブロードキャスト。`broadcast_dimensions` は **operand 軸→結果軸の対応**。
+* `Transpose(operand, permutation[])`
+  **非物質化**の転置。レイアウト物理転置ではない（後段で `ldmatrix.trans`/TMA desc に落ちる）。
+
+> **備考**: RB‑SSA の各 SSA 値には内部属性として \*\*`present_axes`（自由軸集合）\*\*を保持してよい（MAY）。下層には `BroadcastInDim`/`Transpose` があれば十分。
+
+---
+
+## 6.3 型規則とブロードキャスト（明示化）
+
+**原則**: **下層で推測させない**。Binary の rank/軸不一致は **RB‑SSA で確定**する。
+
+1. **Binary 型検査（MUST）**
+
+   * 右端揃えルールで突き合わせ、必要に応じて **`BroadcastInDim` を自動挿入**してから結合。
+   * 整合不能（両辺 size>1 の不一致）は **`BroadcastMismatch` エラー**。
+2. **Transpose（SHOULD）**
+
+   * 添字順序の交換は **`Transpose` を明示**。以降の層は `permutation[]` を読むだけ。
+3. **属性（MAY）**
+
+   * 実装便宜上、各値に `present_axes` を保持可能。Binary は **和集合**、Reduce は **集合差**。ただし **最終的には `BroadcastInDim`/`Transpose` が IR に存在**すること。
+
+---
+
+## 6.4 Movement 正規化（非物質化）
+
+* **permute/transpose** → `Transpose`
+* **expand/broadcast** → `BroadcastInDim`
+* **reshape/view（線形化→再分解）** → `Read` の AxisMap へ折込み（必要なら `BroadcastInDim` と併用）。
+* **pad/slice/step/floordiv/%** → `Select(pred, then, neutral)`（neutral: `sum→0`, `max→−∞`, `min→+∞`）
+* **gather/scatter 等の非SCoP** → `non_scop` として **Region 境界**で分割（§4 不変に従う）。
+
+> **重要**: `BroadcastInDim`/`Transpose` は **非物質化**。GMEM/SMEM に広げたり並べ替えたりしない。
+> 実装は後段の **indexing\_maps/ldmatrix(.trans)/TMA desc** 等で吸収される。
+
+---
+
+## 6.5 Reduce 正規化（SRNF）と合法変形
+
+`Depends(expr, K)` を「式が軸集合 `K` に依存するか」とする（AxisMap 解析）。
+
+* **R0: 合流（Join）**
+  `Reduce(op,K1){ Reduce(op,K2){E} } → Reduce(op,K1∪K2){E}`
+  *条件*: `op` 可換結合、途中に `K1∪K2` 依存演算なし（R1 で先に hoist）。
+* **R1: 不変 Hoist**
+  `Reduce(op,K){ g(E) }`, `Depends(g,K)=false` ⇒ `g(Reduce(op,K){E})`。
+* **R2: 分配（任意）**
+  `sum` の加法/スカラー、`max` の定数加算/非負スカラーなど **安全な場合のみ**。コストモデルで有利な時に限る。
+* **R3: Post‑Ewise（Epilogue）**
+  `Depends(post,K)=false` な ewise は Reduce **外**に置き、acc に直適用。
+* **R4: 異種 op バリア**
+  `max`→`exp`→`sum` 等は合流しない。
+* **正規形（SRNF）**
+  可能な限り `let acc = Reduce(op,K){body(K)}` へ単一化。`body` から K 不変は R1 で外出し。
+
+---
+
+## 6.6 Region 合成手順（IndexBook→RB‑SSA）
+
+1. **Axis 整列**: IndexBook の連番軸で `iters` を確定。
+2. **Movement 正規化**: 既存 Movement を `BroadcastInDim`/`Transpose`/`Read`/`Select` に変換（非物質化）。
+3. **Binary 型検査**: 必要に応じ **`BroadcastInDim` 自動挿入**。
+4. **Reduce 解析**: `Depends(·, axes)` を付与。R1→R0→（必要なら）R2 の順で SRNF へ。
+5. **Select 正規化**: 境界は **Reduce の内側**で neutral を選ぶ形に保持（unguarded を禁止）。
+6. **SSA 共有**: Reduce 結果の fan‑out は再計算禁止。
+7. **Epilogue**: post‑ewise を Reduce 後に直列化。
+8. **Yield**: 出力のみ materialize。`"deferred"` は直後 Region に前渡し（GMEM 往復禁止のヒント）。
+
+---
+
+## 6.7 Plan/GPU 層への受け渡し（推測ゼロ）
+
+* **tensorize（Plan）**: どの `Reduce` を `mma.sync`（SM80）/`wgmma.mma_async`（SM90）へ置換するかを **Reduce 名で指定**。
+* **indexing**: `BroadcastInDim.broadcast_dimensions[]` と `Transpose.permutation[]`、および IndexBook の AxisMap から **indexing\_maps** を機械生成。
+* **layout**: `Transpose` は **SM80: `ldmatrix(.trans)`**, **SM90: TMA desc（stride/transpose）** で消化。
+* **predication**: `Select` と `predicate_tail` を対応付け、predicated `st.global` 等へ。
+
+> **下層は“推測”を行わない**。RB‑SSA/IndexBook にある情報だけで決定する。
+
+---
+
+## 6.8 代表ダンプ（MVP）
+
+### 6.8.1 GEMM + Bias + ReLU（明示 Broadcast/Transpose）
 
 ```json
 {
   "region": {
-    "name":"gemm_bias_relu",
-    "inputs":[
+    "name": "gemm_bias_relu",
+    "iters": [{"name":"m","size":"M"},{"name":"n","size":"N"}],
+    "inputs": [
       {"name":"A","memref":{"shape":["M","K"],"alignment":128,"noalias":true}},
       {"name":"B","memref":{"shape":["K","N"],"alignment":128,"noalias":true}},
       {"name":"bias","memref":{"shape":["N"],"alignment":128,"noalias":true}}
     ],
-    "outputs":[{"name":"C","memref":{"shape":["M","N"],"alignment":128,"noalias":true},"materialize":"gmem"}],
-    "body":[
-      {"let":"C0","op":{"kind":"contraction","pattern":"matmul","lhs":"A","rhs":"B","acc_dtype":"fp32"}},
-      {"let":"C1","op":{"kind":"ewise","fn":"add","inputs":["C0","bias"]}},
-      {"let":"C2","op":{"kind":"unary","fn":"relu","inputs":["C1"]}},
-      {"yield":["C2 -> C"]}
-    ]
+    "outputs": [{"name":"C","memref":{"shape":["M","N"],"alignment":128,"noalias":true},"materialize":"gmem"}],
+    "lets": [
+      {"let":"a3","expr":{"BroadcastInDim":{
+        "operand":{"read":{"tensor":"A","map":["m","k"]}},
+        "result_shape":["M","K","N"], "broadcast_dimensions":[0,1]
+      }}},
+      {"let":"bT","expr":{"Transpose":{
+        "operand":{"read":{"tensor":"B","map":["k","n"]}}, "permutation":[1,0]
+      }}},
+      {"let":"b3","expr":{"BroadcastInDim":{
+        "operand":"bT",
+        "result_shape":["M","K","N"], "broadcast_dimensions":[1,2]
+      }}},
+      {"let":"acc","expr":{"reduce":{"op":"sum","axes":["k"],"init":0.0,"dtype":"fp32",
+        "body":{"mul":["a3","b3"]}}}},
+      {"let":"c1","expr":{"add":["acc", {"read":{"tensor":"bias","map":["n"]}}]}},
+      {"let":"c2","expr":{"relu":["c1"]}}
+    ],
+    "yield":[{"from":"c2","to":"C","cast":"fp16"}]
   }
 }
 ```
+
+> **注**: `BroadcastInDim`/`Transpose` は**非物質化**。Plan は `tensorize: "acc"`、`layout_hints` で `ldmatrix.trans`/TMA を設定し、定型の `cp.async|tma → smem ping‑pong → mma/wgmma → epilogue → st.global` に落ちる。
+
+---
+
+### 6.8.2 Conv 3×3（stride=2, pad=1；単一 Region 直実装）
+
+```json
+{
+  "region": {
+    "name":"conv3x3_s2_p1",
+    "iters":[{"name":"n"},{"name":"co"},{"name":"ho"},{"name":"wo"}],
+    "inputs":[
+      {"name":"X","memref":{"shape":["N","Ci","H","W"],"alignment":128,"noalias":true}},
+      {"name":"W","memref":{"shape":["Co","Ci",3,3],"alignment":128,"noalias":true}}
+    ],
+    "outputs":[{"name":"Y","memref":{"shape":["N","Co","Ho","Wo"],"alignment":128,"noalias":true},"materialize":"gmem"}],
+    "lets":[
+      {"let":"y_acc","expr":{"reduce":{"op":"sum","axes":["ci","kh","kw"],"init":0.0,"dtype":"fp32",
+        "body":{"mul":[
+          {"read":{"tensor":"W","map":["co","ci","kh","kw"]}},
+          {"select":{
+            "pred":{"and":[
+              {"ge":[{"add":[{"mul":[2,"ho"]},{"add":["kh",-1]]}],0]},
+              {"lt":[{"add":[{"mul":[2,"ho"]},{"add":["kh",-1]]}],{"add":["H",2]}}],
+              {"ge":[{"add":[{"mul":[2,"wo"]},{"add":["kw",-1]]}],0]},
+              {"lt":[{"add":[{"mul":[2,"wo"]},{"add":["kw",-1]]}],{"add":["W",2]}}]
+            ]},
+            "then":{"read":{"tensor":"X","map":["n","ci",
+              {"add":[{"mul":[2,"ho"]},{"add":["kh",-1]]}],
+              {"add":[{"mul":[2,"wo"]},{"add":["kw",-1]]}]
+            ]}},
+            "else":0.0
+          }}
+        ]}}}}
+    ],
+    "yield":[{"from":"y_acc","to":"Y","cast":"fp16"}]
+  }
+}
+```
+
+> **im2col→gemm** を選ぶ場合は、Region1 で `BroadcastInDim`/`Transpose` を用いて **im2col を“明示”して materialize** し、Region2 で上記 GEMM を適用する。選択は Plan/コストモデル（§11）に委ねる。
+
+---
+
+### 6.8.3 Attention（行 softmax まで；異種 Reduce は合流しない）
+
+```json
+{
+  "region": {
+    "name":"attention_row_softmax",
+    "iters":[{"name":"b"},{"name":"h"},{"name":"m"}],
+    "inputs":[
+      {"name":"Q","memref":{"shape":["B","H","M","D"],"alignment":128,"noalias":true}},
+      {"name":"K","memref":{"shape":["B","H","N","D"],"alignment":128,"noalias":true}}
+    ],
+    "outputs":[{"name":"P","memref":{"shape":["B","H","M","N"],"alignment":128,"noalias":true},"materialize":"deferred"}],
+    "lets":[
+      {"let":"Qe","expr":{"BroadcastInDim":{
+        "operand":{"read":{"tensor":"Q","map":["b","h","m","d"]}},
+        "result_shape":["B","H","M","N","D"], "broadcast_dimensions":[0,1,2,4]
+      }}},
+      {"let":"Ke","expr":{"BroadcastInDim":{
+        "operand":{"read":{"tensor":"K","map":["b","h","n","d"]}},
+        "result_shape":["B","H","M","N","D"], "broadcast_dimensions":[0,1,3,4]
+      }}},
+      {"let":"S","expr":{"reduce":{"op":"sum","axes":["d"],"init":0.0,"dtype":"fp32",
+        "body":{"mul":["Qe","Ke"]}}}},
+      {"let":"Mrow","expr":{"reduce":{"op":"max","axes":["n"],"init":"-INF","dtype":"fp32","body":"S"}}},
+      {"let":"A","expr":{"exp":[{"sub":["S","Mrow"]}]}},
+      {"let":"Z","expr":{"reduce":{"op":"sum","axes":["n"],"init":0.0,"dtype":"fp32","body":"A"}}},
+      {"let":"Pval","expr":{"div":["A","Z"]}}
+    ],
+    "yield":[{"from":"Pval","to":"P","cast":"fp16"}]
+  }
+}
+```
+
+---
+
+## 6.9 中間データとバッファ（責務分離）
+
+* RB‑SSA は**値SSA**のみを表し、\*\*内部バッファ確保（reg/smem）・段数（2/3）\*\*は記述しない。
+* **最小バッファ種別**（`reg / smem_ring / gmem`, depth）は \*\*Poly‑Core（§7）\*\*と \*\*Plan（§8）\*\*で決定。
+* `materialize:"deferred"` は **同一 SM 内の直後 Region へ前渡し**（GMEM 往復禁止のヒント）。
+
+---
+
+## 6.10 診断（エラー/警告）
+
+* **BroadcastMismatch**: Binary で両辺 size>1 不一致。
+* **AxisAlignmentMismatch**: IndexBook 整列後も同名軸の size が一致しない。
+* **UnguardedAccess**: `pad/slice/step/%` 由来の越境に `Select` ガードが無い。
+* **AccDtypeMissing**: 低精度×低精度の乗算で `acc_dtype` 不在。
+* **NonAssociativeTransform**: 不正な分配（例：`max` に負スケール）を検出。
+* **NeutralInvalid**: `max` の `-INF` 擬似値が dtype と不整合。
+* **ExcessivePiecewise**: `Select` が過剰（Poly‑Core の `gist/coalesce` を強制）。
+
+---
+
+## 6.11 検証とプレイバック
+
+* **CPU プレイバック**: Tiny evaluator を流用（`BroadcastInDim`/`Transpose`/`Reduce` を実装）。
+* **精度**: §13 の `rtol=1e-3, atol=1e-3`。
+* **測定ログ**: FLOPs/Bytes/occ/estimate/actual/plan を継続記録。
+
+---
+
+## 6.12 他層との整合（差分）
+
+* **§4 IndexBook**: AxisMap/連番軸は従来通り。`BroadcastInDim.broadcast_dimensions[]` との整合規則を追記。
+* **§5 Poly‑View**: 解析専用。RB‑SSA にパターン語は持ち込まない。
+* **§8 Plan**: `tensorize` は **Reduce 名**を参照。`layout_hints` と `Transpose` の整合を明記。
+* **§9 GPU IR**: 固定骨格に **tensorize** を注入。`Select` は predication へ。
+* **§10 Pipeline**: Tiny→RB‑SSA で **「暗黙→明示」正規化パス**（Binary 直前に自動挿入）を明記。
 
 ---
 

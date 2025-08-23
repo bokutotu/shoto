@@ -1,9 +1,9 @@
-module IR (Node (..), IR, IRBuildState (..), IRBuilder, ValueId) where
+module IR (Node (..), IR, IRBuildState (..), IRBuilder, ValueId (..)) where
 
 import           Control.Monad.State (State)
 import qualified Data.Map            as M
 
-type ValueId = Int
+newtype ValueId = ValueId {unId :: Int} deriving (Eq, Show, Ord)
 
 -- Operationで[ValueId]の順番によって、入力されたValueがどの入力かを管理する
 -- TODO: Constを導入する

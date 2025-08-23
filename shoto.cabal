@@ -13,9 +13,11 @@ library
     exposed-modules:
         FrontendIR
         IR
+        RegionBufferSSA
         Runtime
         Shoto
         TinyIR
+        CoreOps
 
     other-modules:
         Internal.FFI
