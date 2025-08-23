@@ -1,6 +1,6 @@
 module CoreOps (
     Dim (..),
-    Shape,
+    Shape (..),
     Bound (..),
     SliceSpec (..),
     MovementOp (..),
@@ -14,8 +14,10 @@ module CoreOps (
 -- Core tensor/shape and operation types shared across layers
 
 data Dim = Dyn String | Static Int
+    deriving (Eq, Show)
 
-type Shape = [Dim]
+newtype Shape = Shape [Dim]
+    deriving (Eq, Show)
 
 data Bound = IntBound Int | SymBound String
 

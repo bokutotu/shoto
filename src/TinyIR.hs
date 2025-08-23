@@ -4,7 +4,7 @@
 module TinyIR (
     -- Types (re-exported from TinyOps)
     Dim (..),
-    Shape,
+    Shape (..),
     Bound (..),
     SliceSpec (..),
     MovementOp (..),

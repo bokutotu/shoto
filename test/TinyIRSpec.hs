@@ -1,5 +1,6 @@
 module TinyIRSpec where
 
+import           CoreOps    (Shape (..))
 import qualified Data.Map   as M
 import           Foreign.C  (CFloat)
 import qualified IR
@@ -33,7 +34,7 @@ spec = describe "TinyIR" $ do
             testReduceAxisIR
                 TinyIR.Sum
                 1
-                [TinyIR.Static 2, TinyIR.Static 3]
+                (Shape [TinyIR.Static 2, TinyIR.Static 3])
                 [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
                 [6.0, 15.0]
 
@@ -42,8 +43,8 @@ testBinaryOpIR :: TinyIR.BinaryTy -> [CFloat] -> [CFloat] -> [CFloat] -> IO ()
 testBinaryOpIR ty a b expected = do
     let size = length a
         -- Build IR graph
-        input1 = IR.Input (TinyIR.Input [TinyIR.Static size])
-        input2 = IR.Input (TinyIR.Input [TinyIR.Static size])
+        input1 = IR.Input (TinyIR.Input (Shape [TinyIR.Static size]))
+        input2 = IR.Input (TinyIR.Input (Shape [TinyIR.Static size]))
         binOp = IR.Operation (TinyIR.ElementWise (TinyIR.Binary ty)) [IR.ValueId 0, IR.ValueId 1]
         ir =
             M.fromList [(IR.ValueId 0, input1), (IR.ValueId 1, input2), (IR.ValueId 2, binOp)] :: TinyIR.TinyIR
@@ -67,7 +68,7 @@ testReduceAllIR :: TinyIR.ReduceOp -> [CFloat] -> CFloat -> IO ()
 testReduceAllIR op input expected = do
     let size = length input
         -- Build IR graph for full reduction
-        input1 = IR.Input (TinyIR.Input [TinyIR.Static size])
+        input1 = IR.Input (TinyIR.Input (Shape [TinyIR.Static size]))
         reduceOp = IR.Operation (TinyIR.Reduce op Nothing) [IR.ValueId 0]
         ir = M.fromList [(IR.ValueId 0, input1), (IR.ValueId 1, reduceOp)] :: TinyIR.TinyIR
 
@@ -86,8 +87,9 @@ testReduceAllIR op input expected = do
 -- Test reduce along axis operations using IR
 testReduceAxisIR :: TinyIR.ReduceOp -> Int -> TinyIR.Shape -> [CFloat] -> [CFloat] -> IO ()
 testReduceAxisIR op axis shape input expected = do
-    let totalSize = product [n | TinyIR.Static n <- shape]
-        outputSize = product [n | (i, TinyIR.Static n) <- zip [0 ..] shape, i /= axis]
+    let Shape dims = shape
+        totalSize = product [n | TinyIR.Static n <- dims]
+        outputSize = product [n | (i, TinyIR.Static n) <- zip [0 ..] dims, i /= axis]
         -- Build IR graph for axis reduction
         input1 = IR.Input (TinyIR.Input shape)
         reduceOp = IR.Operation (TinyIR.Reduce op (Just axis)) [IR.ValueId 0]

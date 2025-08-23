@@ -42,6 +42,7 @@ import           Foreign.C.Types
 import           Foreign.ForeignPtr     (ForeignPtr, castForeignPtr,
                                          newForeignPtr, withForeignPtr)
 import           Foreign.Ptr
+import           CoreOps                (Shape (..))
 import           Internal.FFI
 import           IR                     (Node (..), ValueId (..))
 import           System.IO.Unsafe       (unsafePerformIO)
@@ -88,7 +89,7 @@ copyToCpu GpuPtr{..} = do
 -- JIT/NVRTC functionality
 -- Helper functions
 checkCuda :: String -> CUresult -> IO ()
-checkCuda msg result = when (result /= cudaSuccess) $ do
+checkCuda msg result = when (result /= 0) $ do
     alloca $ \errStrPtr -> do
         _ <- cuGetErrorString result errStrPtr
         errStr <- peek errStrPtr >>= peekCString
@@ -238,7 +239,7 @@ launchKernel func config args = do
                 (blockDimY config)
                 (blockDimZ config)
                 (sharedMemBytes config)
-                nullPtr -- default stream
+                (CUstream nullPtr) -- default stream
                 argsPtr
                 nullPtr -- extra options
     checkCuda "cuCtxSynchronize" =<< cuCtxSynchronize
@@ -305,7 +306,7 @@ generateCudaCode (TIR.ElementWise op) _ _ =
     -- TODO: ちゃんと入力を使用するように修正
     TIR.codegenElementWise op []
 generateCudaCode (TIR.Reduce op axis) _ _ =
-    TIR.codegenReduce op axis []
+    TIR.codegenReduce op axis (Shape [])
 generateCudaCode _ _ _ = error "Unsupported operation"
 
 executeGraph ::
@@ -394,13 +395,13 @@ launchReduceAllKernel func input output = do
 
 -- 軸指定Reduce用のカーネル起動
 launchReduceAxisKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> Int -> TIR.Shape -> IO ()
-launchReduceAxisKernel func input output axis shape = do
+launchReduceAxisKernel func input output axis (Shape dims) = do
     withGpuPointers [input, output] $ \[pIn, pOut] -> do
         let outputSize = size output
-            reduceSize = case shape !! axis of
+            reduceSize = case dims !! axis of
                 TIR.Static n -> n
                 _ -> error "Dynamic shape not supported"
-            innerSize = product [n | (i, TIR.Static n) <- zip [0 ..] shape, i > axis]
+            innerSize = product [n | (i, TIR.Static n) <- zip [0 ..] dims, i > axis]
             outerStride = reduceSize * innerSize
             blockSize = 256
             gridSize = (outputSize + blockSize - 1) `div` blockSize
