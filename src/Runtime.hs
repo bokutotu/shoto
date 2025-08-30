@@ -44,7 +44,7 @@ import           Foreign.ForeignPtr     (ForeignPtr, castForeignPtr,
 import           Foreign.Ptr
 import           CoreOps                (Shape (..))
 import           Internal.FFI
-import           IR                     (Node (..), ValueId (..))
+import           IR                     (Node (..), NodeId (..))
 import           System.IO.Unsafe       (unsafePerformIO)
 import qualified TinyIR                 as TIR
 
@@ -264,11 +264,11 @@ withCudaKernel deviceNum kernelSource fileName compileOptions functionName actio
 -- モジュールとファンクションのペアを保持
 type CompiledKernel = (CUmodule, CUfunction)
 
-type CompiledGraph = M.Map ValueId CompiledKernel
+type CompiledGraph = M.Map NodeId CompiledKernel
 
 -- 現状は一つのOperationと2つか1つのInputがあるGraphのみを対称にする
 -- TODO: 複数のOpsetへの対応
-compileGraph :: TIR.TinyIR -> [ValueId] -> IO CompiledGraph
+compileGraph :: TIR.TinyIR -> [NodeId] -> IO CompiledGraph
 compileGraph ir outputIds = do
     initializeCuda
     case outputIds of
@@ -300,7 +300,7 @@ compileGraph ir outputIds = do
                 _ -> return M.empty
 
 -- 演算に応じたCUDAコード生成
-generateCudaCode :: TIR.TinyOp -> [ValueId] -> TIR.TinyIR -> BS.ByteString
+generateCudaCode :: TIR.TinyOp -> [NodeId] -> TIR.TinyIR -> BS.ByteString
 generateCudaCode (TIR.ElementWise op) _ _ =
     -- 入力のshapeを取得（今は固定で10と仮定）
     -- TODO: ちゃんと入力を使用するように修正
@@ -310,7 +310,7 @@ generateCudaCode (TIR.Reduce op axis) _ _ =
 generateCudaCode _ _ _ = error "Unsupported operation"
 
 executeGraph ::
-    forall a. TIR.TinyIR -> CompiledGraph -> [(ValueId, GpuPtr a)] -> (ValueId, GpuPtr a) -> IO ()
+    forall a. TIR.TinyIR -> CompiledGraph -> [(NodeId, GpuPtr a)] -> (NodeId, GpuPtr a) -> IO ()
 executeGraph ir functions inputs (outputId, output) = do
     -- CUDAコンテキストを設定
     withCudaContext 0 $ \_ -> do
@@ -337,7 +337,7 @@ executeGraph ir functions inputs (outputId, output) = do
                                 launchReduceAllKernel func input1 output
                             (TIR.Reduce _ (Just axis), Just [input1]) ->
                                 -- 軸指定Reduce
-                                case M.lookup (ValueId 0) ir of
+                                case M.lookup (NodeId 0) ir of
                                     Just (Input (TIR.Input shape)) ->
                                         launchReduceAxisKernel func input1 output axis shape
                                     _ -> error "Cannot determine input shape for axis reduction"

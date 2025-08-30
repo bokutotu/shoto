@@ -28,7 +28,7 @@ import           CoreOps               (BinaryTy (..), Bound (..), Dim (..),
 import qualified Data.ByteString.Char8 as BS
 import           IR                    (IR)
 
-data Input = Input {shape :: Shape}
+newtype Input = Input {shape :: Shape}
 
 type TinyIR = IR Input TinyOp
 

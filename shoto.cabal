@@ -13,7 +13,6 @@ library
     exposed-modules:
         FrontendIR
         IR
-        RegionBufferSSA
         Runtime
         Shoto
         TinyIR

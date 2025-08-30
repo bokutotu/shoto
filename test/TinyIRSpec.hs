@@ -45,9 +45,9 @@ testBinaryOpIR ty a b expected = do
         -- Build IR graph
         input1 = IR.Input (TinyIR.Input (Shape [TinyIR.Static size]))
         input2 = IR.Input (TinyIR.Input (Shape [TinyIR.Static size]))
-        binOp = IR.Operation (TinyIR.ElementWise (TinyIR.Binary ty)) [IR.ValueId 0, IR.ValueId 1]
+        binOp = IR.Operation (TinyIR.ElementWise (TinyIR.Binary ty)) [IR.NodeId 0, IR.NodeId 1]
         ir =
-            M.fromList [(IR.ValueId 0, input1), (IR.ValueId 1, input2), (IR.ValueId 2, binOp)] :: TinyIR.TinyIR
+            M.fromList [(IR.NodeId 0, input1), (IR.NodeId 1, input2), (IR.NodeId 2, binOp)] :: TinyIR.TinyIR
         outputInit = replicate size 0.0 :: [CFloat]
 
     -- Prepare GPU buffers
@@ -56,8 +56,8 @@ testBinaryOpIR ty a b expected = do
     cGpu <- copyToGpu outputInit
 
     -- Compile and execute via IR
-    compiledGraph <- compileGraph ir [IR.ValueId 2]
-    executeGraph ir compiledGraph [(IR.ValueId 0, aGpu), (IR.ValueId 1, bGpu)] (IR.ValueId 2, cGpu)
+    compiledGraph <- compileGraph ir [IR.NodeId 2]
+    executeGraph ir compiledGraph [(IR.NodeId 0, aGpu), (IR.NodeId 1, bGpu)] (IR.NodeId 2, cGpu)
 
     -- Check result
     result <- copyToCpu cGpu
@@ -69,16 +69,16 @@ testReduceAllIR op input expected = do
     let size = length input
         -- Build IR graph for full reduction
         input1 = IR.Input (TinyIR.Input (Shape [TinyIR.Static size]))
-        reduceOp = IR.Operation (TinyIR.Reduce op Nothing) [IR.ValueId 0]
-        ir = M.fromList [(IR.ValueId 0, input1), (IR.ValueId 1, reduceOp)] :: TinyIR.TinyIR
+        reduceOp = IR.Operation (TinyIR.Reduce op Nothing) [IR.NodeId 0]
+        ir = M.fromList [(IR.NodeId 0, input1), (IR.NodeId 1, reduceOp)] :: TinyIR.TinyIR
 
     -- Prepare GPU buffers
     inputGpu <- copyToGpu input
     outputGpu <- copyToGpu [0.0 :: CFloat] -- Single element for scalar output
 
     -- Compile and execute via IR
-    compiledGraph <- compileGraph ir [IR.ValueId 1]
-    executeGraph ir compiledGraph [(IR.ValueId 0, inputGpu)] (IR.ValueId 1, outputGpu)
+    compiledGraph <- compileGraph ir [IR.NodeId 1]
+    executeGraph ir compiledGraph [(IR.NodeId 0, inputGpu)] (IR.NodeId 1, outputGpu)
 
     -- Check result
     [result] <- copyToCpu outputGpu
@@ -92,16 +92,16 @@ testReduceAxisIR op axis shape input expected = do
         outputSize = product [n | (i, TinyIR.Static n) <- zip [0 ..] dims, i /= axis]
         -- Build IR graph for axis reduction
         input1 = IR.Input (TinyIR.Input shape)
-        reduceOp = IR.Operation (TinyIR.Reduce op (Just axis)) [IR.ValueId 0]
-        ir = M.fromList [(IR.ValueId 0, input1), (IR.ValueId 1, reduceOp)] :: TinyIR.TinyIR
+        reduceOp = IR.Operation (TinyIR.Reduce op (Just axis)) [IR.NodeId 0]
+        ir = M.fromList [(IR.NodeId 0, input1), (IR.NodeId 1, reduceOp)] :: TinyIR.TinyIR
 
     -- Prepare GPU buffers
     inputGpu <- copyToGpu input
     outputGpu <- copyToGpu (replicate outputSize 0.0)
 
     -- Compile and execute via IR
-    compiledGraph <- compileGraph ir [IR.ValueId 1]
-    executeGraph ir compiledGraph [(IR.ValueId 0, inputGpu)] (IR.ValueId 1, outputGpu)
+    compiledGraph <- compileGraph ir [IR.NodeId 1]
+    executeGraph ir compiledGraph [(IR.NodeId 0, inputGpu)] (IR.NodeId 1, outputGpu)
 
     -- Check result
     result <- copyToCpu outputGpu
