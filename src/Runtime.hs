@@ -22,10 +22,10 @@ module Runtime (
     -- Only necessary types for external use
     CUfunction,
     -- Executor functions moved from Executor module
-    compileGraph,
-    executeGraph,
-    CompiledKernel,
-    CompiledGraph,
+    -- compileGraph,
+    -- executeGraph,
+    -- CompiledKernel,
+    -- CompiledGraph,
 ) where
 
 import           Control.Monad          (unless, when)
@@ -33,7 +33,6 @@ import           Control.Monad.Cont     (ContT (ContT, runContT))
 import qualified Data.ByteString.Char8  as BS
 import           Data.ByteString.Unsafe (unsafeUseAsCString)
 import           Data.IORef
-import qualified Data.Map               as M
 import           Foreign                (Storable (..), alloca, allocaArray,
                                          allocaBytes, malloc, peekArray, poke,
                                          withArray)
@@ -42,19 +41,16 @@ import           Foreign.C.Types
 import           Foreign.ForeignPtr     (ForeignPtr, castForeignPtr,
                                          newForeignPtr, withForeignPtr)
 import           Foreign.Ptr
-import           CoreOps                (Shape (..))
 import           Internal.FFI
-import           IR                     (Node (..), NodeId (..))
 import           System.IO.Unsafe       (unsafePerformIO)
-import qualified TinyIR                 as TIR
 
 data GpuPtr a = GpuPtr {ptr :: ForeignPtr a, size :: Int}
 
-withGpuPointers :: (Traversable t) => t (GpuPtr a) -> (t (Ptr ()) -> IO b) -> IO b
-withGpuPointers containers action = runContT (traverse convert containers) action
-  where
-    convert gpu = ContT $ \cont -> withForeignPtr (ptr gpu) (cont . castPtr)
-
+-- withGpuPointers :: (Traversable t) => t (GpuPtr a) -> (t (Ptr ()) -> IO b) -> IO b
+-- withGpuPointers containers action = runContT (traverse convert containers) action
+--   where
+--     convert gpu = ContT $ \cont -> withForeignPtr (ptr gpu) (cont . castPtr)
+--
 allocGpu :: forall a. (Storable a) => Int -> IO (GpuPtr a)
 allocGpu size = do
     -- Ensure CUDA is initialized for runtime API usage
@@ -257,199 +253,199 @@ withCudaKernel deviceNum kernelSource fileName compileOptions functionName actio
     withCudaContext deviceNum $ \_ -> do
         withCompiledKernel kernelSource fileName compileOptions functionName action
 
--- =============================
--- Executor functionality moved from Executor.hs
--- =============================
-
--- モジュールとファンクションのペアを保持
-type CompiledKernel = (CUmodule, CUfunction)
-
-type CompiledGraph = M.Map NodeId CompiledKernel
-
--- 現状は一つのOperationと2つか1つのInputがあるGraphのみを対称にする
--- TODO: 複数のOpsetへの対応
-compileGraph :: TIR.TinyIR -> [NodeId] -> IO CompiledGraph
-compileGraph ir outputIds = do
-    initializeCuda
-    case outputIds of
-        [] -> pure M.empty
-        (outId : _) ->
-            case M.lookup outId ir of
-                Just (Operation op inputs) -> do
-                    -- CUDAコード生成
-                    let cudaCode = generateCudaCode op inputs ir
-
-                    -- コンパイルしてモジュールとファンクションを永続的に保持
-                    withCudaContext 0 $ \_ -> do
-                        -- PTXにコンパイル
-                        ptx <- compileCudaKernel cudaCode (BS.pack "generated.cu") []
-
-                        -- モジュールをロード（永続的に保持）
-                        alloca $ \modulePtr -> do
-                            BS.useAsCString ptx $ \ptxCStr -> do
-                                checkCuda "cuModuleLoadData" =<< cuModuleLoadData modulePtr (castPtr ptxCStr)
-                            modul <- peek modulePtr
-
-                            -- ファンクションを取得
-                            alloca $ \funcPtr -> do
-                                BS.useAsCString (BS.pack "kernel") $ \funcName -> do
-                                    checkCuda "cuModuleGetFunction" =<< cuModuleGetFunction funcPtr modul funcName
-                                func <- peek funcPtr
-
-                                return $ M.singleton outId (modul, func)
-                _ -> return M.empty
-
--- 演算に応じたCUDAコード生成
-generateCudaCode :: TIR.TinyOp -> [NodeId] -> TIR.TinyIR -> BS.ByteString
-generateCudaCode (TIR.ElementWise op) _ _ =
-    -- 入力のshapeを取得（今は固定で10と仮定）
-    -- TODO: ちゃんと入力を使用するように修正
-    TIR.codegenElementWise op []
-generateCudaCode (TIR.Reduce op axis) _ _ =
-    TIR.codegenReduce op axis (Shape [])
-generateCudaCode _ _ _ = error "Unsupported operation"
-
-executeGraph ::
-    forall a. TIR.TinyIR -> CompiledGraph -> [(NodeId, GpuPtr a)] -> (NodeId, GpuPtr a) -> IO ()
-executeGraph ir functions inputs (outputId, output) = do
-    -- CUDAコンテキストを設定
-    withCudaContext 0 $ \_ -> do
-        -- コンパイル済み関数を取得
-        case M.lookup outputId functions of
-            Nothing -> error "Function not compiled"
-            Just (_, func) -> do
-                -- モジュールとファンクションのペアを受け取る
-                -- 演算の入力を特定
-                case M.lookup outputId ir of
-                    Just (Operation op opInputs) -> do
-                        -- 入力ポインタを準備
-                        let getPtr vid = lookup vid inputs
-                            inputPtrs = mapM getPtr opInputs
-                        case (op, inputPtrs) of
-                            (TIR.ElementWise (TIR.Binary _), Just [input1, input2]) ->
-                                -- Binary演算
-                                launchBinaryKernel func input1 input2 output
-                            (TIR.ElementWise (TIR.Unary _), Just [input1]) ->
-                                -- Unary演算
-                                launchUnaryKernel func input1 output
-                            (TIR.Reduce _ Nothing, Just [input1]) ->
-                                -- 全要素Reduce
-                                launchReduceAllKernel func input1 output
-                            (TIR.Reduce _ (Just axis), Just [input1]) ->
-                                -- 軸指定Reduce
-                                case M.lookup (NodeId 0) ir of
-                                    Just (Input (TIR.Input shape)) ->
-                                        launchReduceAxisKernel func input1 output axis shape
-                                    _ -> error "Cannot determine input shape for axis reduction"
-                            _ -> error $ "Unsupported operation/input configuration"
-                    _ -> error "Output not found in IR"
-
--- Unary演算用のカーネル起動
-launchUnaryKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> IO ()
-launchUnaryKernel func input output = do
-    withGpuPointers [input, output] $ \[pIn, pOut] -> do
-        let n = size output
-            blockSize = 256
-            gridSize = (n + blockSize - 1) `div` blockSize
-            config =
-                KernelLaunchConfig
-                    { gridDimX = fromIntegral gridSize
-                    , gridDimY = 1
-                    , gridDimZ = 1
-                    , blockDimX = fromIntegral blockSize
-                    , blockDimY = 1
-                    , blockDimZ = 1
-                    , sharedMemBytes = 0
-                    }
-        -- カーネル引数の準備
-        alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
-            poke inPtr pIn
-            poke outPtr pOut
-            poke nPtr (fromIntegral n :: CInt)
-            let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
-            launchKernel func config args
-
--- 全要素Reduce用のカーネル起動
-launchReduceAllKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> IO ()
-launchReduceAllKernel func input output = do
-    withGpuPointers [input, output] $ \[pIn, pOut] -> do
-        let n = size input
-            -- 単一スレッドで実行（TODO: 並列化）
-            config =
-                KernelLaunchConfig
-                    { gridDimX = 1
-                    , gridDimY = 1
-                    , gridDimZ = 1
-                    , blockDimX = 1
-                    , blockDimY = 1
-                    , blockDimZ = 1
-                    , sharedMemBytes = 0
-                    }
-        -- カーネル引数の準備
-        alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
-            poke inPtr pIn
-            poke outPtr pOut
-            poke nPtr (fromIntegral n :: CInt)
-            let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
-            launchKernel func config args
-
--- 軸指定Reduce用のカーネル起動
-launchReduceAxisKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> Int -> TIR.Shape -> IO ()
-launchReduceAxisKernel func input output axis (Shape dims) = do
-    withGpuPointers [input, output] $ \[pIn, pOut] -> do
-        let outputSize = size output
-            reduceSize = case dims !! axis of
-                TIR.Static n -> n
-                _ -> error "Dynamic shape not supported"
-            innerSize = product [n | (i, TIR.Static n) <- zip [0 ..] dims, i > axis]
-            outerStride = reduceSize * innerSize
-            blockSize = 256
-            gridSize = (outputSize + blockSize - 1) `div` blockSize
-            config =
-                KernelLaunchConfig
-                    { gridDimX = fromIntegral gridSize
-                    , gridDimY = 1
-                    , gridDimZ = 1
-                    , blockDimX = fromIntegral blockSize
-                    , blockDimY = 1
-                    , blockDimZ = 1
-                    , sharedMemBytes = 0
-                    }
-        -- カーネル引数の準備（6引数）
-        alloca $ \inPtr -> alloca $ \outPtr ->
-            alloca $ \n1Ptr -> alloca $ \n2Ptr -> alloca $ \n3Ptr -> alloca $ \n4Ptr -> do
-                poke inPtr pIn
-                poke outPtr pOut
-                poke n1Ptr (fromIntegral outerStride :: CInt)
-                poke n2Ptr (fromIntegral reduceSize :: CInt)
-                poke n3Ptr (fromIntegral innerSize :: CInt)
-                poke n4Ptr (fromIntegral outputSize :: CInt)
-                let args = [castPtr inPtr, castPtr outPtr, castPtr n1Ptr, castPtr n2Ptr, castPtr n3Ptr, castPtr n4Ptr]
-                launchKernel func config args
-
--- Binary演算用のカーネル起動
-launchBinaryKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> GpuPtr a -> IO ()
-launchBinaryKernel func input1 input2 output = do
-    withGpuPointers [input1, input2, output] $ \[p1, p2, pOut] -> do
-        let n = size output
-            blockSize = 256
-            gridSize = (n + blockSize - 1) `div` blockSize
-            config =
-                KernelLaunchConfig
-                    { gridDimX = fromIntegral gridSize
-                    , gridDimY = 1
-                    , gridDimZ = 1
-                    , blockDimX = fromIntegral blockSize
-                    , blockDimY = 1
-                    , blockDimZ = 1
-                    , sharedMemBytes = 0
-                    }
-        -- カーネル引数の準備
-        -- CUDAカーネルの引数は、値へのポインタのポインタとして渡す必要がある
-        alloca $ \aPtr -> alloca $ \bPtr -> alloca $ \cPtr -> alloca $ \nPtr -> do
-            poke aPtr p1
-            poke bPtr p2
-            poke cPtr pOut
-            poke nPtr (fromIntegral n :: CInt)
-            let args = [castPtr aPtr, castPtr bPtr, castPtr cPtr, castPtr nPtr]
-            launchKernel func config args
+-- -- =============================
+-- -- Executor functionality moved from Executor.hs
+-- -- =============================
+--
+-- -- モジュールとファンクションのペアを保持
+-- type CompiledKernel = (CUmodule, CUfunction)
+--
+-- type CompiledGraph = M.Map NodeId CompiledKernel
+--
+-- -- 現状は一つのOperationと2つか1つのInputがあるGraphのみを対称にする
+-- -- TODO: 複数のOpsetへの対応
+-- compileGraph :: TIR.TinyIR -> [NodeId] -> IO CompiledGraph
+-- compileGraph ir outputIds = do
+--     initializeCuda
+--     case outputIds of
+--         [] -> pure M.empty
+--         (outId : _) ->
+--             case M.lookup outId ir of
+--                 Just (Operation op inputs) -> do
+--                     -- CUDAコード生成
+--                     let cudaCode = generateCudaCode op inputs ir
+--
+--                     -- コンパイルしてモジュールとファンクションを永続的に保持
+--                     withCudaContext 0 $ \_ -> do
+--                         -- PTXにコンパイル
+--                         ptx <- compileCudaKernel cudaCode (BS.pack "generated.cu") []
+--
+--                         -- モジュールをロード（永続的に保持）
+--                         alloca $ \modulePtr -> do
+--                             BS.useAsCString ptx $ \ptxCStr -> do
+--                                 checkCuda "cuModuleLoadData" =<< cuModuleLoadData modulePtr (castPtr ptxCStr)
+--                             modul <- peek modulePtr
+--
+--                             -- ファンクションを取得
+--                             alloca $ \funcPtr -> do
+--                                 BS.useAsCString (BS.pack "kernel") $ \funcName -> do
+--                                     checkCuda "cuModuleGetFunction" =<< cuModuleGetFunction funcPtr modul funcName
+--                                 func <- peek funcPtr
+--
+--                                 return $ M.singleton outId (modul, func)
+--                 _ -> return M.empty
+--
+-- -- 演算に応じたCUDAコード生成
+-- generateCudaCode :: TIR.TinyOp -> [NodeId] -> TIR.TinyIR -> BS.ByteString
+-- generateCudaCode (TIR.ElementWise op) _ _ =
+--     -- 入力のshapeを取得（今は固定で10と仮定）
+--     -- TODO: ちゃんと入力を使用するように修正
+--     TIR.codegenElementWise op []
+-- generateCudaCode (TIR.Reduce op axis) _ _ =
+--     TIR.codegenReduce op axis (Shape [])
+-- generateCudaCode _ _ _ = error "Unsupported operation"
+--
+-- executeGraph ::
+--     forall a. TIR.TinyIR -> CompiledGraph -> [(NodeId, GpuPtr a)] -> (NodeId, GpuPtr a) -> IO ()
+-- executeGraph ir functions inputs (outputId, output) = do
+--     -- CUDAコンテキストを設定
+--     withCudaContext 0 $ \_ -> do
+--         -- コンパイル済み関数を取得
+--         case M.lookup outputId functions of
+--             Nothing -> error "Function not compiled"
+--             Just (_, func) -> do
+--                 -- モジュールとファンクションのペアを受け取る
+--                 -- 演算の入力を特定
+--                 case M.lookup outputId ir of
+--                     Just (Operation op opInputs) -> do
+--                         -- 入力ポインタを準備
+--                         let getPtr vid = lookup vid inputs
+--                             inputPtrs = mapM getPtr opInputs
+--                         case (op, inputPtrs) of
+--                             (TIR.ElementWise (TIR.Binary _), Just [input1, input2]) ->
+--                                 -- Binary演算
+--                                 launchBinaryKernel func input1 input2 output
+--                             (TIR.ElementWise (TIR.Unary _), Just [input1]) ->
+--                                 -- Unary演算
+--                                 launchUnaryKernel func input1 output
+--                             (TIR.Reduce _ Nothing, Just [input1]) ->
+--                                 -- 全要素Reduce
+--                                 launchReduceAllKernel func input1 output
+--                             (TIR.Reduce _ (Just axis), Just [input1]) ->
+--                                 -- 軸指定Reduce
+--                                 case M.lookup (NodeId 0) ir of
+--                                     Just (Input (TIR.Input shape)) ->
+--                                         launchReduceAxisKernel func input1 output axis shape
+--                                     _ -> error "Cannot determine input shape for axis reduction"
+--                             _ -> error $ "Unsupported operation/input configuration"
+--                     _ -> error "Output not found in IR"
+--
+-- -- Unary演算用のカーネル起動
+-- launchUnaryKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> IO ()
+-- launchUnaryKernel func input output = do
+--     withGpuPointers [input, output] $ \[pIn, pOut] -> do
+--         let n = size output
+--             blockSize = 256
+--             gridSize = (n + blockSize - 1) `div` blockSize
+--             config =
+--                 KernelLaunchConfig
+--                     { gridDimX = fromIntegral gridSize
+--                     , gridDimY = 1
+--                     , gridDimZ = 1
+--                     , blockDimX = fromIntegral blockSize
+--                     , blockDimY = 1
+--                     , blockDimZ = 1
+--                     , sharedMemBytes = 0
+--                     }
+--         -- カーネル引数の準備
+--         alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
+--             poke inPtr pIn
+--             poke outPtr pOut
+--             poke nPtr (fromIntegral n :: CInt)
+--             let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
+--             launchKernel func config args
+--
+-- -- 全要素Reduce用のカーネル起動
+-- launchReduceAllKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> IO ()
+-- launchReduceAllKernel func input output = do
+--     withGpuPointers [input, output] $ \[pIn, pOut] -> do
+--         let n = size input
+--             -- 単一スレッドで実行（TODO: 並列化）
+--             config =
+--                 KernelLaunchConfig
+--                     { gridDimX = 1
+--                     , gridDimY = 1
+--                     , gridDimZ = 1
+--                     , blockDimX = 1
+--                     , blockDimY = 1
+--                     , blockDimZ = 1
+--                     , sharedMemBytes = 0
+--                     }
+--         -- カーネル引数の準備
+--         alloca $ \inPtr -> alloca $ \outPtr -> alloca $ \nPtr -> do
+--             poke inPtr pIn
+--             poke outPtr pOut
+--             poke nPtr (fromIntegral n :: CInt)
+--             let args = [castPtr inPtr, castPtr outPtr, castPtr nPtr]
+--             launchKernel func config args
+--
+-- -- 軸指定Reduce用のカーネル起動
+-- launchReduceAxisKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> Int -> TIR.Shape -> IO ()
+-- launchReduceAxisKernel func input output axis (Shape dims) = do
+--     withGpuPointers [input, output] $ \[pIn, pOut] -> do
+--         let outputSize = size output
+--             reduceSize = case dims !! axis of
+--                 TIR.Static n -> n
+--                 _ -> error "Dynamic shape not supported"
+--             innerSize = product [n | (i, TIR.Static n) <- zip [0 ..] dims, i > axis]
+--             outerStride = reduceSize * innerSize
+--             blockSize = 256
+--             gridSize = (outputSize + blockSize - 1) `div` blockSize
+--             config =
+--                 KernelLaunchConfig
+--                     { gridDimX = fromIntegral gridSize
+--                     , gridDimY = 1
+--                     , gridDimZ = 1
+--                     , blockDimX = fromIntegral blockSize
+--                     , blockDimY = 1
+--                     , blockDimZ = 1
+--                     , sharedMemBytes = 0
+--                     }
+--         -- カーネル引数の準備（6引数）
+--         alloca $ \inPtr -> alloca $ \outPtr ->
+--             alloca $ \n1Ptr -> alloca $ \n2Ptr -> alloca $ \n3Ptr -> alloca $ \n4Ptr -> do
+--                 poke inPtr pIn
+--                 poke outPtr pOut
+--                 poke n1Ptr (fromIntegral outerStride :: CInt)
+--                 poke n2Ptr (fromIntegral reduceSize :: CInt)
+--                 poke n3Ptr (fromIntegral innerSize :: CInt)
+--                 poke n4Ptr (fromIntegral outputSize :: CInt)
+--                 let args = [castPtr inPtr, castPtr outPtr, castPtr n1Ptr, castPtr n2Ptr, castPtr n3Ptr, castPtr n4Ptr]
+--                 launchKernel func config args
+--
+-- -- Binary演算用のカーネル起動
+-- launchBinaryKernel :: CUfunction -> GpuPtr a -> GpuPtr a -> GpuPtr a -> IO ()
+-- launchBinaryKernel func input1 input2 output = do
+--     withGpuPointers [input1, input2, output] $ \[p1, p2, pOut] -> do
+--         let n = size output
+--             blockSize = 256
+--             gridSize = (n + blockSize - 1) `div` blockSize
+--             config =
+--                 KernelLaunchConfig
+--                     { gridDimX = fromIntegral gridSize
+--                     , gridDimY = 1
+--                     , gridDimZ = 1
+--                     , blockDimX = fromIntegral blockSize
+--                     , blockDimY = 1
+--                     , blockDimZ = 1
+--                     , sharedMemBytes = 0
+--                     }
+--         -- カーネル引数の準備
+--         -- CUDAカーネルの引数は、値へのポインタのポインタとして渡す必要がある
+--         alloca $ \aPtr -> alloca $ \bPtr -> alloca $ \cPtr -> alloca $ \nPtr -> do
+--             poke aPtr p1
+--             poke bPtr p2
+--             poke cPtr pOut
+--             poke nPtr (fromIntegral n :: CInt)
+--             let args = [castPtr aPtr, castPtr bPtr, castPtr cPtr, castPtr nPtr]
+--             launchKernel func config args

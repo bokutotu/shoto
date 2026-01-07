@@ -11,12 +11,8 @@ build-type:    Simple
 
 library
     exposed-modules:
-        FrontendIR
-        IR
         Runtime
         Shoto
-        TinyIR
-        CoreOps
 
     other-modules:
         Internal.FFI
