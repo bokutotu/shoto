@@ -1,0 +1,46 @@
+name: shoto
+version: 0.0.0.1
+license: MIT
+license-file: LICENSE
+maintainer: mushin.hudoushin@gmail.com
+author: Hikaru KONDO
+synopsis: Shoto polyhedral compiler executable
+category: Compilers
+
+language: GHC2024
+
+dependencies:
+  - base >= 4.19.1.0
+
+ghc-options: -Wall
+
+extra-libraries:
+  - cudart
+  - cuda
+  - nvrtc
+  - stdc++
+
+extra-lib-dirs:
+  - /usr/local/cuda/lib64
+
+library:
+  source-dirs: src
+  dependencies:
+    - bytestring
+    - process
+    - unix
+    - containers
+    - mtl
+
+tests:
+  shoto-test:
+    main: Spec.hs
+    source-dirs: test
+    build-tools:
+      - hspec-discover
+    dependencies:
+      - shoto
+      - hspec
+      - process
+      - bytestring
+      - containers

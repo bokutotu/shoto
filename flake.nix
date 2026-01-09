@@ -31,8 +31,18 @@
         # GCC 13を使用
         gccForCuda = pkgs.gcc13;
 
+        # hpackでcabalファイルを生成したソースを作成
+        src = pkgs.runCommand "shoto-src" {
+          nativeBuildInputs = [ pkgs.haskellPackages.hpack ];
+        } ''
+          cp -r ${./.} $out
+          chmod -R +w $out
+          cd $out
+          hpack
+        '';
+
         project = pkgs.haskell-nix.project' {
-          src = ./.;
+          inherit src;
           compiler-nix-name = "ghc912";
           modules = [{
             # システムのcudartライブラリを使用
@@ -47,10 +57,10 @@
             cabal                  = {};
             hlint                  = {};
             stylish-haskell        = {};
-            cabal-gild             = {};
             fast-tags              = {};
             fourmolu               = {};
             hspec-discover         = {};
+            hpack                  = {};
           };
           buildInputs = [
             pkgs.git

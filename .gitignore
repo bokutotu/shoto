@@ -110,3 +110,6 @@ bench.html
 # ignore the downloaded binary files
 scripts/release/binary-downloads/
 .ccls-cache/*
+
+# hpack generated cabal file
+*.cabal
