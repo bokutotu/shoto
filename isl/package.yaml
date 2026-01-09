@@ -16,6 +16,8 @@ ghc-options: -Wall
 
 library:
   source-dirs: src
+  exposed-modules:
+    - ISL
   extra-libraries:
     - isl
   pkg-config-dependencies:
