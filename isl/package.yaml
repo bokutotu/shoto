@@ -1,0 +1,28 @@
+name: isl
+version: 0.0.0.1
+license: MIT
+license-file: ../LICENSE
+maintainer: mushin.hudoushin@gmail.com
+author: Hikaru KONDO
+synopsis: Haskell bindings for Integer Set Library (ISL)
+category: Math
+
+language: GHC2024
+
+dependencies:
+  - base >= 4.19.1.0
+
+ghc-options: -Wall
+
+library:
+  source-dirs: src
+
+tests:
+  isl-test:
+    main: Spec.hs
+    source-dirs: test
+    build-tools:
+      - hspec-discover
+    dependencies:
+      - isl
+      - hspec

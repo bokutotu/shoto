@@ -38,7 +38,8 @@
           cp -r ${./.} $out
           chmod -R +w $out
           cd $out
-          hpack
+          hpack shoto/
+          hpack isl/
         '';
 
         project = pkgs.haskell-nix.project' {
