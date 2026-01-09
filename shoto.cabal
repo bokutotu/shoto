@@ -1,56 +1,52 @@
-cabal-version: 3.14
-name:          shoto
-version:       0.0.0.1
-license:       MIT
-license-file:  LICENSE
-maintainer:    mushin.hudoushin@gmail.com
-author:        Hikaru KONDO
-synopsis:      Shoto polyhedral compiler executable
-category:      Compilers
-build-type:    Simple
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.38.1.
+--
+-- see: https://github.com/sol/hpack
+
+name:           shoto
+version:        0.0.0.1
+synopsis:       Shoto polyhedral compiler executable
+category:       Compilers
+author:         Hikaru KONDO
+maintainer:     mushin.hudoushin@gmail.com
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
 
 library
-    exposed-modules:
-        Runtime
-        Shoto
-
-    other-modules:
-        Internal.FFI
-
-    hs-source-dirs:   src
-    default-language: GHC2024
-    extra-libraries:  cudart
-                    , cuda
-                    , nvrtc
-                    , stdc++
-    extra-lib-dirs:   /usr/local/cuda/lib64
-    ghc-options:      -Wall
-    build-depends:
-        base >=4.19.1.0,
-        bytestring,
-        process,
-        unix,
-        containers,
-        mtl
+  exposed-modules:
+      InputIR
+      Shoto
+  other-modules:
+      Paths_shoto
+  hs-source-dirs:
+      src
+  ghc-options: -Wall
+  build-depends:
+      base >=4.19.1.0
+    , bytestring
+    , containers
+    , mtl
+    , process
+    , unix
+  default-language: GHC2024
 
 test-suite shoto-test
-    type:               exitcode-stdio-1.0
-    main-is:            Spec.hs
-    build-tool-depends: hspec-discover:hspec-discover
-    hs-source-dirs:     test
-    other-modules:      ArithmeticSpec
-                        TinyIRSpec
-    default-language:   GHC2024
-    extra-libraries:    cudart
-                      , cuda
-                      , nvrtc
-                      , stdc++
-    extra-lib-dirs:     /usr/local/cuda/lib64
-    ghc-options:        -Wall
-    build-depends:
-        base,
-        hspec,
-        process,
-        shoto,
-        bytestring,
-        containers
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_shoto
+  hs-source-dirs:
+      test
+  ghc-options: -Wall
+  build-tool-depends:
+      hspec-discover:hspec-discover
+  build-depends:
+      base >=4.19.1.0
+    , bytestring
+    , containers
+    , hspec
+    , process
+    , shoto
+  default-language: GHC2024

@@ -51,10 +51,13 @@
             fast-tags              = {};
             fourmolu               = {};
             hspec-discover         = {};
+            hpack                  = {};
           };
           buildInputs = [
             pkgs.git
             gccForCuda
+            pkgs.isl
+            pkgs.gmp
           ];
           shellHook = ''
             # GCC 13を優先
