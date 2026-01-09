@@ -1,0 +1,12 @@
+pre-commit:
+  commands:
+    format:
+      glob: "*.hs"
+      run: |
+        # Get staged .hs files
+        FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.hs$' || true)
+        if [ -n "$FILES" ]; then
+          echo "$FILES" | xargs stylish-haskell -i
+          echo "$FILES" | xargs fourmolu -i
+          echo "$FILES" | xargs git add
+        fi

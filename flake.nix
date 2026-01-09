@@ -65,9 +65,13 @@
           };
           buildInputs = [
             pkgs.git
+            pkgs.lefthook
             gccForCuda
           ];
           shellHook = ''
+            # lefthookをインストール
+            lefthook install
+
             # GCC 13を優先
             export PATH="${gccForCuda}/bin:$PATH"
             export CC="${gccForCuda}/bin/gcc"
