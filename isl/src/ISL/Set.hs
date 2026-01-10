@@ -3,8 +3,8 @@
 
 module ISL.Set (
     -- * Types
-    SSet (..),
-    SUnionSet (..),
+    Set (..),
+    UnionSet (..),
 
     -- * Set Operations
     set,
@@ -36,27 +36,27 @@ import           Foreign.Ptr            (nullPtr)
 import           ISL.Core
 
 -- | Type definitions (moved from Internal)
-newtype SSet s = SSet (ForeignPtr IslSet)
+newtype Set s = Set (ForeignPtr IslSet)
 
-newtype SUnionSet s = SUnionSet (ForeignPtr IslUnionSet)
+newtype UnionSet s = UnionSet (ForeignPtr IslUnionSet)
 
 -- =========================================================
--- SSet Implementation
+-- Set Implementation
 -- =========================================================
 
 -- | String literal support: s <- "{ ... }"
-instance IsString (ISL s (SSet s)) where
+instance IsString (ISL s (Set s)) where
     fromString = set
 
-set :: String -> ISL s (SSet s)
+set :: String -> ISL s (Set s)
 set str = do
     Env ctxFP <- askEnv
     let mk = withForeignPtr ctxFP $ \ctx ->
             withCString str $ \cstr -> c_set_read ctx cstr
-    manage c_set_free "isl_set_read_from_str" mk SSet
+    manage c_set_free "isl_set_read_from_str" mk Set
 
-setToString :: SSet s -> ISL s String
-setToString (SSet fp) = do
+setToString :: Set s -> ISL s String
+setToString (Set fp) = do
     cstr <- liftIO $ withForeignPtr fp c_set_to_str
     if cstr == nullPtr
         then throwISL "isl_set_to_str"
@@ -66,34 +66,34 @@ setToString (SSet fp) = do
 Copy inputs before passing to keep Haskell values immutable
 -}
 liftOp2Set ::
-    (Set -> Set -> IO Set) ->
+    (RawSet -> RawSet -> IO RawSet) ->
     String ->
-    SSet s ->
-    SSet s ->
-    ISL s (SSet s)
-liftOp2Set op name (SSet fa) (SSet fb) = do
+    Set s ->
+    Set s ->
+    ISL s (Set s)
+liftOp2Set op name (Set fa) (Set fb) = do
     let mk = withForeignPtr fa $ \pa ->
             withForeignPtr fb $ \pb -> do
                 ca <- c_set_copy pa
                 cb <- c_set_copy pb
                 op ca cb
-    manage c_set_free name mk SSet
+    manage c_set_free name mk Set
 
-setUnion :: SSet s -> SSet s -> ISL s (SSet s)
+setUnion :: Set s -> Set s -> ISL s (Set s)
 setUnion = liftOp2Set c_set_union "isl_set_union"
 
-setIntersect :: SSet s -> SSet s -> ISL s (SSet s)
+setIntersect :: Set s -> Set s -> ISL s (Set s)
 setIntersect = liftOp2Set c_set_intersect "isl_set_intersect"
 
-setSubtract :: SSet s -> SSet s -> ISL s (SSet s)
+setSubtract :: Set s -> Set s -> ISL s (Set s)
 setSubtract = liftOp2Set c_set_subtract "isl_set_subtract"
 
-setCoalesce :: SSet s -> ISL s (SSet s)
-setCoalesce (SSet fp) = do
+setCoalesce :: Set s -> ISL s (Set s)
+setCoalesce (Set fp) = do
     let mk = withForeignPtr fp $ \ptr -> do
             cptr <- c_set_copy ptr
             c_set_coalesce cptr
-    manage c_set_free "isl_set_coalesce" mk SSet
+    manage c_set_free "isl_set_coalesce" mk Set
 
 -- Operators
 infixl 6 \/
@@ -102,62 +102,62 @@ infixl 7 /\
 
 infixl 6 \\
 
-(\/) :: SSet s -> SSet s -> ISL s (SSet s)
+(\/) :: Set s -> Set s -> ISL s (Set s)
 (\/) = setUnion
 
-(/\) :: SSet s -> SSet s -> ISL s (SSet s)
+(/\) :: Set s -> Set s -> ISL s (Set s)
 (/\) = setIntersect
 
-(\\) :: SSet s -> SSet s -> ISL s (SSet s)
+(\\) :: Set s -> Set s -> ISL s (Set s)
 (\\) = setSubtract
 
 -- =========================================================
--- SUnionSet Implementation
+-- UnionSet Implementation
 -- =========================================================
 
-instance IsString (ISL s (SUnionSet s)) where
+instance IsString (ISL s (UnionSet s)) where
     fromString = unionSet
 
-unionSet :: String -> ISL s (SUnionSet s)
+unionSet :: String -> ISL s (UnionSet s)
 unionSet str = do
     Env ctxFP <- askEnv
     let mk = withForeignPtr ctxFP $ \ctx ->
             withCString str $ \cstr -> c_uset_read ctx cstr
-    manage c_uset_free "isl_union_set_read_from_str" mk SUnionSet
+    manage c_uset_free "isl_union_set_read_from_str" mk UnionSet
 
-unionSetToString :: SUnionSet s -> ISL s String
-unionSetToString (SUnionSet fp) = do
+unionSetToString :: UnionSet s -> ISL s String
+unionSetToString (UnionSet fp) = do
     cstr <- liftIO $ withForeignPtr fp c_uset_to_str
     if cstr == nullPtr
         then throwISL "isl_union_set_to_str"
         else liftIO $ bracket (pure cstr) free peekCString
 
 liftOp2US ::
-    (UnionSet -> UnionSet -> IO UnionSet) ->
+    (RawUnionSet -> RawUnionSet -> IO RawUnionSet) ->
     String ->
-    SUnionSet s ->
-    SUnionSet s ->
-    ISL s (SUnionSet s)
-liftOp2US op name (SUnionSet fa) (SUnionSet fb) = do
+    UnionSet s ->
+    UnionSet s ->
+    ISL s (UnionSet s)
+liftOp2US op name (UnionSet fa) (UnionSet fb) = do
     let mk = withForeignPtr fa $ \pa ->
             withForeignPtr fb $ \pb -> do
                 ca <- c_uset_copy pa
                 cb <- c_uset_copy pb
                 op ca cb
-    manage c_uset_free name mk SUnionSet
+    manage c_uset_free name mk UnionSet
 
-unionSetUnion :: SUnionSet s -> SUnionSet s -> ISL s (SUnionSet s)
+unionSetUnion :: UnionSet s -> UnionSet s -> ISL s (UnionSet s)
 unionSetUnion = liftOp2US c_uset_union "isl_union_set_union"
 
-unionSetIntersect :: SUnionSet s -> SUnionSet s -> ISL s (SUnionSet s)
+unionSetIntersect :: UnionSet s -> UnionSet s -> ISL s (UnionSet s)
 unionSetIntersect = liftOp2US c_uset_intersect "isl_union_set_intersect"
 
-unionSetSubtract :: SUnionSet s -> SUnionSet s -> ISL s (SUnionSet s)
+unionSetSubtract :: UnionSet s -> UnionSet s -> ISL s (UnionSet s)
 unionSetSubtract = liftOp2US c_uset_subtract "isl_union_set_subtract"
 
-unionSetCoalesce :: SUnionSet s -> ISL s (SUnionSet s)
-unionSetCoalesce (SUnionSet fp) = do
+unionSetCoalesce :: UnionSet s -> ISL s (UnionSet s)
+unionSetCoalesce (UnionSet fp) = do
     let mk = withForeignPtr fp $ \ptr -> do
             cptr <- c_uset_copy ptr
             c_uset_coalesce cptr
-    manage c_uset_free "isl_union_set_coalesce" mk SUnionSet
+    manage c_uset_free "isl_union_set_coalesce" mk UnionSet

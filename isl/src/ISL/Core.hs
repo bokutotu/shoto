@@ -45,7 +45,7 @@ data IslError = IslError
     }
     deriving (Show, Eq)
 
-getCtx :: ISL s Ctx
+getCtx :: ISL s RawCtx
 getCtx = do
     Env ctxFP <- askEnv
     liftIO $ withForeignPtr ctxFP pure
