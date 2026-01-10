@@ -16,7 +16,7 @@ spec = do
                 s <- set "{ [i] : 0 <= i < 10 }"
                 setToString s
             r <- shouldBeRight result
-            r `shouldContain` "i"
+            r `shouldBe` "{ [i] : 0 <= i <= 9 }"
 
     describe "ISL Set" $ do
         it "can parse and convert set to string" $ do
@@ -24,7 +24,7 @@ spec = do
                 s <- set "{ [i] : 0 <= i < 10 }"
                 setToString s
             r <- shouldBeRight result
-            r `shouldContain` "i"
+            r `shouldBe` "{ [i] : 0 <= i <= 9 }"
 
         it "can compute set union" $ do
             result <- runISL $ do
@@ -33,8 +33,7 @@ spec = do
                 u <- s1 \/ s2
                 setToString u
             r <- shouldBeRight result
-            r `shouldContain` "0 <="
-            r `shouldContain` "<= 9"
+            r `shouldBe` "{ [i] : 0 <= i <= 9 and (i <= 4 or i >= 5) }"
 
         it "can compute set intersection" $ do
             result <- runISL $ do
@@ -43,8 +42,7 @@ spec = do
                 i <- s1 /\ s2
                 setToString i
             r <- shouldBeRight result
-            r `shouldContain` "5 <="
-            r `shouldContain` "<= 9"
+            r `shouldBe` "{ [i] : 5 <= i <= 9 }"
 
         it "can compute set subtraction" $ do
             result <- runISL $ do
@@ -53,8 +51,7 @@ spec = do
                 d <- s1 \\ s2
                 setToString d
             r <- shouldBeRight result
-            r `shouldContain` "0 <="
-            r `shouldContain` "<= 4"
+            r `shouldBe` "{ [i] : 0 <= i <= 4 }"
 
         it "can coalesce set" $ do
             result <- runISL $ do
@@ -64,8 +61,7 @@ spec = do
                 c <- setCoalesce u
                 setToString c
             r <- shouldBeRight result
-            r `shouldContain` "0 <="
-            r `shouldContain` "<= 9"
+            r `shouldBe` "{ [i] : 0 <= i <= 9 }"
 
     describe "ISL Union Set" $ do
         it "can parse and convert union set to string" $ do
@@ -73,8 +69,7 @@ spec = do
                 uset <- unionSet "{ A[i] : 0 <= i < 10; B[j] : 0 <= j < 5 }"
                 unionSetToString uset
             r <- shouldBeRight result
-            r `shouldContain` "A"
-            r `shouldContain` "B"
+            r `shouldBe` "{ A[i] : 0 <= i <= 9; B[j] : 0 <= j <= 4 }"
 
         it "can compute union set union" $ do
             result <- runISL $ do
@@ -83,8 +78,7 @@ spec = do
                 combined <- unionSetUnion u1 u2
                 unionSetToString combined
             r <- shouldBeRight result
-            r `shouldContain` "A"
-            r `shouldContain` "B"
+            r `shouldBe` "{ A[i] : 0 <= i <= 4; B[j] : 0 <= j <= 2 }"
 
     describe "ISL Schedule" $ do
         it "can parse and convert schedule to string" $ do
@@ -94,7 +88,7 @@ spec = do
                         "{ domain: \"{ S[i] : 0 <= i < 10 }\", child: { schedule: \"[{ S[i] -> [i] }]\" } }"
                 scheduleToString sched
             r <- shouldBeRight result
-            r `shouldContain` "S"
+            r `shouldBe` "{ domain: \"{ S[i] : 0 <= i <= 9 }\", child: { schedule: \"[{ S[i] -> [(i)] }]\" } }"
 
         it "can get schedule domain" $ do
             result <- runISL $ do
@@ -104,8 +98,7 @@ spec = do
                 dom <- scheduleDomain sched
                 unionSetToString dom
             r <- shouldBeRight result
-            r `shouldContain` "S"
-            r `shouldContain` "0 <="
+            r `shouldBe` "{ S[i] : 0 <= i <= 9 }"
 
         it "can create schedule from domain" $ do
             result <- runISL $ do
@@ -113,4 +106,4 @@ spec = do
                 sched <- scheduleFromDomain dom
                 scheduleToString sched
             r <- shouldBeRight result
-            r `shouldContain` "domain"
+            r `shouldBe` "{ domain: \"{ S[i] : 0 <= i <= 9 }\" }"
