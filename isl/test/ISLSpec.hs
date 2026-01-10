@@ -107,3 +107,50 @@ spec = do
                 scheduleToString sched
             r <- shouldBeRight result
             r `shouldBe` "{ domain: \"{ S[i] : 0 <= i <= 9 }\" }"
+
+    describe "ISL Schedule Tree" $ do
+        it "can get schedule tree from domain-only schedule" $ do
+            result <- runISL $ do
+                dom <- unionSet "{ S[i] : 0 <= i < 10 }"
+                sched <- scheduleFromDomain dom
+                scheduleTree sched
+            tree <- shouldBeRight result
+            tree
+                `shouldBe` TreeDomain
+                    "{ S[i] : 0 <= i <= 9 }"
+                    [TreeLeaf]
+
+        it "can get schedule tree with band node" $ do
+            result <- runISL $ do
+                sched <-
+                    schedule
+                        "{ domain: \"{ S[i] : 0 <= i < 10 }\", child: { schedule: \"[{ S[i] -> [i] }]\" } }"
+                scheduleTree sched
+            tree <- shouldBeRight result
+            tree
+                `shouldBe` TreeDomain
+                    "{ S[i] : 0 <= i <= 9 }"
+                    [ TreeBand
+                        BandInfo
+                            { bandSchedule = "[{ S[i] -> [(i)] }]"
+                            , bandPermutable = False
+                            , bandMembers = 1
+                            }
+                        [TreeLeaf]
+                    ]
+
+        it "can get schedule tree with sequence node" $ do
+            result <- runISL $ do
+                sched <-
+                    schedule
+                        "{ domain: \"{ A[i] : 0 <= i < 5; B[j] : 0 <= j < 3 }\", child: { sequence: [ { filter: \"{ A[i] }\" }, { filter: \"{ B[j] }\" } ] } }"
+                scheduleTree sched
+            tree <- shouldBeRight result
+            tree
+                `shouldBe` TreeDomain
+                    "{ A[i] : 0 <= i <= 4; B[j] : 0 <= j <= 2 }"
+                    [ TreeSequence
+                        [ TreeFilter "{ A[i] }" [TreeLeaf]
+                        , TreeFilter "{ B[j] }" [TreeLeaf]
+                        ]
+                    ]

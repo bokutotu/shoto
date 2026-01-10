@@ -72,12 +72,7 @@ runISL action = do
             ctxFP <- newForeignPtr p_ctx_free rawCtx
             runReaderT (runExceptT (unISL action)) (Env ctxFP)
 
-manage ::
-    (Ptr a -> IO ()) ->
-    String ->
-    IO (Ptr a) ->
-    (ForeignPtr a -> b) ->
-    ISL s b
+manage :: (Ptr a -> IO ()) -> String -> IO (Ptr a) -> (ForeignPtr a -> b) -> ISL s b
 manage rawFree fn producer ctor = do
     Env ctxFP <- askEnv
     ptr <- liftIO producer
