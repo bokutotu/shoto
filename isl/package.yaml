@@ -24,6 +24,8 @@ library:
     - isl
   dependencies:
     - mtl
+    - containers
+    - text
 
 tests:
   isl-test:
@@ -34,3 +36,5 @@ tests:
     dependencies:
       - isl
       - hspec
+      - containers
+      - text
