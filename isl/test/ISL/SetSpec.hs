@@ -1,0 +1,46 @@
+module ISL.SetSpec (spec) where
+
+import ISL
+import Test.Hspec
+
+spec :: Spec
+spec = do
+    describe "ISL Set" $ do
+        it "can parse and convert set to string" $ do
+            result <- runISL $ do
+                s <- set "{ [i] : 0 <= i < 10 }"
+                setToString s
+            result `shouldBe` Right "{ [i] : 0 <= i <= 9 }"
+
+        it "can compute set union" $ do
+            result <- runISL $ do
+                s1 <- set "{ [i] : 0 <= i < 5 }"
+                s2 <- set "{ [i] : 5 <= i < 10 }"
+                u <- s1 \/ s2
+                setToString u
+            result `shouldBe` Right "{ [i] : 0 <= i <= 9 and (i <= 4 or i >= 5) }"
+
+        it "can compute set intersection" $ do
+            result <- runISL $ do
+                s1 <- set "{ [i] : 0 <= i < 10 }"
+                s2 <- set "{ [i] : 5 <= i < 15 }"
+                i <- s1 /\ s2
+                setToString i
+            result `shouldBe` Right "{ [i] : 5 <= i <= 9 }"
+
+        it "can compute set subtraction" $ do
+            result <- runISL $ do
+                s1 <- set "{ [i] : 0 <= i < 10 }"
+                s2 <- set "{ [i] : 5 <= i < 10 }"
+                d <- s1 \\ s2
+                setToString d
+            result `shouldBe` Right "{ [i] : 0 <= i <= 4 }"
+
+        it "can coalesce set" $ do
+            result <- runISL $ do
+                s1 <- set "{ [i] : 0 <= i < 5 }"
+                s2 <- set "{ [i] : 5 <= i < 10 }"
+                u <- s1 \/ s2
+                c <- setCoalesce u
+                setToString c
+            result `shouldBe` Right "{ [i] : 0 <= i <= 9 }"
