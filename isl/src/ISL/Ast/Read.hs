@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module ISL.Ast.Read (
     parseSetExpr,
     parseUnionSetExpr,
@@ -172,7 +174,7 @@ pMapPart params = do
     case constraints of
         Nothing -> pure $ MapExpr domSpace ranSpace []
         Just (mapSpaceWithLocals, cons) ->
-            let locals = spaceLocals mapSpaceWithLocals
+            let locals = mapSpaceWithLocals.spaceLocals
                 domSpace' = domSpace{spaceLocals = locals}
                 ranSpace' = ranSpace{spaceLocals = locals}
              in pure $ MapExpr domSpace' ranSpace' cons
@@ -231,7 +233,7 @@ buildConstraint op lhs rhs =
 
 shiftAffine :: Rational -> AffineExpr -> Parser AffineExpr
 shiftAffine delta (AffineLinear lin) =
-    pure $ AffineLinear lin{constant = constant lin + delta}
+    pure $ AffineLinear lin{constant = lin.constant + delta}
 shiftAffine _ (AffinePiecewise _ _) =
     fail "strict inequality requires linear expression"
 
@@ -245,7 +247,7 @@ pAffineExprFull = do
     case parts of
         [] -> fail "expected affine expression"
         [single@(setExpr, lin)] ->
-            if null (setConstraints setExpr)
+            if null setExpr.setConstraints
                 then pure $ AffineLinear lin
                 else do
                     space <- commonPieceSpace parts
@@ -277,8 +279,8 @@ pAffinePiece params = do
 commonPieceSpace :: [(SetExpr, LinearExpr)] -> Parser Space
 commonPieceSpace [] = fail "expected affine pieces"
 commonPieceSpace ((setExpr, _) : rest) =
-    let baseSpace = setSpace setExpr
-        allSame = all ((== baseSpace) . setSpace . fst) rest
+    let baseSpace = setExpr.setSpace
+        allSame = all ((== baseSpace) . (.setSpace) . fst) rest
      in if allSame
             then pure baseSpace
             else fail "piecewise affine parts have inconsistent spaces"
@@ -623,10 +625,10 @@ pDivExpr space = do
 dimMapOrFail :: Space -> Parser (Map Text DimRef)
 dimMapOrFail space =
     let entries =
-            [(spaceDimName d, DimRef ParamDim d) | d <- spaceParams space]
-                ++ [(spaceDimName d, DimRef InDim d) | d <- spaceInputs space]
-                ++ [(spaceDimName d, DimRef OutDim d) | d <- spaceOutputs space]
-                ++ [(spaceDimName d, DimRef LocalDim d) | d <- spaceLocals space]
+            [(d.spaceDimName, DimRef ParamDim d) | d <- space.spaceParams]
+                ++ [(d.spaceDimName, DimRef InDim d) | d <- space.spaceInputs]
+                ++ [(d.spaceDimName, DimRef OutDim d) | d <- space.spaceOutputs]
+                ++ [(d.spaceDimName, DimRef LocalDim d) | d <- space.spaceLocals]
         dimMap = Map.fromList entries
      in if Map.size dimMap /= length entries
             then fail "duplicate dimension name"

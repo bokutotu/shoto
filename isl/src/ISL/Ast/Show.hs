@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module ISL.Ast.Show (
     setExprToString,
     unionSetExprToString,
@@ -74,7 +76,7 @@ compactString = unwords . map strip . lines
 
 ppSetExpr :: Int -> SetExpr -> [String]
 ppSetExpr base setExpr =
-    let params = spaceParams (setSpace setExpr)
+    let params = setExpr.setSpace.spaceParams
         header = indent base ++ ppParamsPrefix params ++ "{"
         body = ppSetPart (base + 2) setExpr
         footer = indent base ++ "}"
@@ -106,24 +108,24 @@ ppUnionMapExpr base (UnionMapExpr maps) =
 
 ppSetPart :: Int -> SetExpr -> [String]
 ppSetPart base (SetExpr space constraints) =
-    let locals = spaceLocals space
+    let locals = space.spaceLocals
         tupleLine =
             indent base
-                ++ ppTuple (spaceName space) (spaceInputs space)
+                ++ ppTuple space.spaceName space.spaceInputs
                 ++ if null constraints then "" else " :"
         constraintLines = ppConstraintsLines (base + 2) locals constraints
      in tupleLine : constraintLines
 
 ppMapPart :: Int -> MapExpr -> [String]
 ppMapPart base (MapExpr dom ran constraints) =
-    let locals = spaceLocals dom
+    let locals = dom.spaceLocals
         domDims = spaceTupleInputs dom
         ranDims = spaceTupleOutputs ran
         tupleLine =
             indent base
-                ++ ppTuple (spaceName dom) domDims
+                ++ ppTuple dom.spaceName domDims
                 ++ " -> "
-                ++ ppTuple (spaceName ran) ranDims
+                ++ ppTuple ran.spaceName ranDims
                 ++ if null constraints then "" else " :"
         constraintLines = ppConstraintsLines (base + 2) locals constraints
      in tupleLine : constraintLines
@@ -146,13 +148,13 @@ ppAffineExprInline aff =
 
 ppAffineExprFull :: Int -> AffineExpr -> [String]
 ppAffineExprFull base (AffineLinear lin) =
-    let space = linearSpace lin
-        params = spaceParams space
-        tuple = ppTuple (spaceName space) (spaceInputs space)
+    let space = lin.linearSpace
+        params = space.spaceParams
+        tuple = ppTuple space.spaceName space.spaceInputs
         line = indent base ++ ppParamsPrefix params ++ "{ " ++ tuple ++ " -> " ++ ppLinearExpr lin ++ " }"
      in [line]
 ppAffineExprFull base (AffinePiecewise space parts) =
-    let params = spaceParams space
+    let params = space.spaceParams
         header = indent base ++ ppParamsPrefix params ++ "{"
         body = joinPartsWithSemicolons (map (ppAffinePiece (base + 2)) parts)
         footer = indent base ++ "}"
@@ -160,15 +162,15 @@ ppAffineExprFull base (AffinePiecewise space parts) =
 
 ppAffinePiece :: Int -> (SetExpr, LinearExpr) -> [String]
 ppAffinePiece base (setExpr, lin) =
-    let space = setSpace setExpr
-        locals = spaceLocals space
+    let space = setExpr.setSpace
+        locals = space.spaceLocals
         tupleLine =
             indent base
-                ++ ppTuple (spaceName space) (spaceInputs space)
+                ++ ppTuple space.spaceName space.spaceInputs
                 ++ " -> "
                 ++ ppLinearExpr lin
-                ++ if null (setConstraints setExpr) then "" else " :"
-        constraintLines = ppConstraintsLines (base + 2) locals (setConstraints setExpr)
+                ++ if null setExpr.setConstraints then "" else " :"
+        constraintLines = ppConstraintsLines (base + 2) locals setExpr.setConstraints
      in tupleLine : constraintLines
 
 ppLinearExpr :: LinearExpr -> String
@@ -189,7 +191,7 @@ ppLinearExpr (LinearExpr space constantVal coeffMap divs) =
         divTerms =
             [ termFromDiv divTerm
             | divTerm <- divs
-            , divTermCoeff divTerm /= 0
+            , divTerm.divTermCoeff /= 0
             ]
         constTerms =
             [ termFromConst constantVal
@@ -228,22 +230,22 @@ ppSpaceDim (SpaceDim name) = T.unpack name
 
 spaceTupleInputs :: Space -> [SpaceDim]
 spaceTupleInputs space =
-    let inputs = spaceInputs space
-        outputs = spaceOutputs space
+    let inputs = space.spaceInputs
+        outputs = space.spaceOutputs
      in if null inputs then outputs else inputs
 
 spaceTupleOutputs :: Space -> [SpaceDim]
 spaceTupleOutputs space =
-    let inputs = spaceInputs space
-        outputs = spaceOutputs space
+    let inputs = space.spaceInputs
+        outputs = space.spaceOutputs
      in if null outputs then inputs else outputs
 
 dimRefsInOrder :: Space -> [DimRef]
 dimRefsInOrder space =
-    map (DimRef ParamDim) (spaceParams space)
-        ++ map (DimRef InDim) (spaceInputs space)
-        ++ map (DimRef OutDim) (spaceOutputs space)
-        ++ map (DimRef LocalDim) (spaceLocals space)
+    map (DimRef ParamDim) space.spaceParams
+        ++ map (DimRef InDim) space.spaceInputs
+        ++ map (DimRef OutDim) space.spaceOutputs
+        ++ map (DimRef LocalDim) space.spaceLocals
 
 data SignedTerm = SignedTerm Bool String
 
@@ -251,7 +253,7 @@ termFromCoeff :: DimRef -> Rational -> SignedTerm
 termFromCoeff ref coeff =
     let neg = coeff < 0
         absCoeff = abs coeff
-        name = ppSpaceDim (dimTarget ref)
+        name = ppSpaceDim ref.dimTarget
         body =
             if absCoeff == 1
                 then name
@@ -328,21 +330,21 @@ appendSemicolon linesList =
 commonParamsSet :: [SetExpr] -> [SpaceDim]
 commonParamsSet [] = []
 commonParamsSet (SetExpr space _ : rest) =
-    let params = spaceParams space
-     in if all ((== params) . spaceParams . setSpace) rest
+    let params = space.spaceParams
+     in if all ((== params) . (.spaceParams) . (.setSpace)) rest
             then params
             else error "UnionSetExpr has inconsistent parameters"
 
 commonParamsMap :: [MapExpr] -> [SpaceDim]
 commonParamsMap [] = []
 commonParamsMap (MapExpr dom ran _ : rest) =
-    let params = spaceParams dom
-     in if params == spaceParams ran && all (sameParams params) rest
+    let params = dom.spaceParams
+     in if params == ran.spaceParams && all (sameParams params) rest
             then params
             else error "UnionMapExpr has inconsistent parameters"
   where
     sameParams params (MapExpr dom' ran' _) =
-        spaceParams dom' == params && spaceParams ran' == params
+        dom'.spaceParams == params && ran'.spaceParams == params
 
 multiParts :: MultiAffineExpr -> [(Space, [AffineExpr])]
 multiParts (MultiAffineExpr space exprs) = [(space, exprs)]
@@ -362,7 +364,7 @@ ppMultiPart base (space, exprs) =
     let tupleLine =
             indent base
                 ++ "{ "
-                ++ ppTuple (spaceName space) (spaceInputs space)
+                ++ ppTuple space.spaceName space.spaceInputs
                 ++ " -> "
                 ++ ppAffineTuple exprs
                 ++ " }"
@@ -379,8 +381,8 @@ ppAffineTupleElem expr =
 commonParamsMulti :: [(Space, [AffineExpr])] -> [SpaceDim]
 commonParamsMulti [] = []
 commonParamsMulti ((space, _) : rest) =
-    let params = spaceParams space
-     in if all ((== params) . spaceParams . fst) rest
+    let params = space.spaceParams
+     in if all ((== params) . (.spaceParams) . fst) rest
             then params
             else error "MultiAffineExpr has inconsistent parameters"
 
