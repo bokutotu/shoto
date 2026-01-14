@@ -7,7 +7,10 @@ module ISL.Ast (
     mapExprToString,
     unionMapExprToString,
     affineExprToString,
+    pwAffineExprToString,
     multiAffineExprToString,
+    multiPwAffineExprToString,
+    multiUnionPwAffineExprToString,
     scheduleTreeToString,
     constraintToString,
     parseSetExpr,
@@ -15,19 +18,26 @@ module ISL.Ast (
     parseMapExpr,
     parseUnionMapExpr,
     parseAffineExpr,
+    parsePwAffineExpr,
     parseMultiAffineExpr,
+    parseMultiPwAffineExpr,
+    parseMultiUnionPwAffineExpr,
     parseScheduleTree,
     parseConstraint,
 ) where
 
 import           ISL.Ast.Read  (parseAffineExpr, parseConstraint, parseMapExpr,
-                                parseMultiAffineExpr, parseScheduleTree,
-                                parseSetExpr, parseUnionMapExpr,
-                                parseUnionSetExpr)
+                                parseMultiAffineExpr, parseMultiPwAffineExpr,
+                                parseMultiUnionPwAffineExpr, parsePwAffineExpr,
+                                parseScheduleTree, parseSetExpr,
+                                parseUnionMapExpr, parseUnionSetExpr)
 import           ISL.Ast.Show  (affineExprToString, constraintToString,
                                 mapExprToString, multiAffineExprToString,
-                                scheduleTreeToString, setExprToString,
-                                unionMapExprToString, unionSetExprToString)
+                                multiPwAffineExprToString,
+                                multiUnionPwAffineExprToString,
+                                pwAffineExprToString, scheduleTreeToString,
+                                setExprToString, unionMapExprToString,
+                                unionSetExprToString)
 import           ISL.Ast.Types
 
 instance Show SetExpr where
@@ -45,11 +55,20 @@ instance Show UnionMapExpr where
 instance Show AffineExpr where
     show = affineExprToString
 
+instance Show PwAffineExpr where
+    show = pwAffineExprToString
+
 instance Show Constraint where
     show = constraintToString
 
+instance Show MultiUnionPwAffineExpr where
+    show = multiUnionPwAffineExprToString
+
 instance Show MultiAffineExpr where
     show = multiAffineExprToString
+
+instance Show MultiPwAffineExpr where
+    show = multiPwAffineExprToString
 
 instance Show ScheduleTree where
     show = scheduleTreeToString
@@ -69,11 +88,20 @@ instance Read UnionMapExpr where
 instance Read AffineExpr where
     readsPrec _ = readWith parseAffineExpr
 
+instance Read PwAffineExpr where
+    readsPrec _ = readWith parsePwAffineExpr
+
 instance Read Constraint where
     readsPrec _ = readWith parseConstraint
 
+instance Read MultiUnionPwAffineExpr where
+    readsPrec _ = readWith parseMultiUnionPwAffineExpr
+
 instance Read MultiAffineExpr where
     readsPrec _ = readWith parseMultiAffineExpr
+
+instance Read MultiPwAffineExpr where
+    readsPrec _ = readWith parseMultiPwAffineExpr
 
 instance Read ScheduleTree where
     readsPrec _ = readWith parseScheduleTree

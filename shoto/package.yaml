@@ -1,7 +1,7 @@
 name: shoto
 version: 0.0.0.1
 license: MIT
-license-file: ../LICENSE
+license-file: LICENSE
 maintainer: mushin.hudoushin@gmail.com
 author: Hikaru KONDO
 synopsis: Shoto polyhedral compiler executable

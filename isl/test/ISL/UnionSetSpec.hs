@@ -1,7 +1,17 @@
 module ISL.UnionSetSpec (spec) where
 
+import           Data.List  (sortOn)
 import           ISL
+import qualified ISL.Ast    as Ast
 import           Test.Hspec
+
+normalizeUnionSet :: String -> Either String Ast.UnionSetExpr
+normalizeUnionSet str = do
+    Ast.UnionSetExpr sets <- Ast.parseUnionSetExpr str
+    pure $ Ast.UnionSetExpr (sortOn Ast.setExprToString sets)
+
+normalizeResult :: Either IslError String -> Either String Ast.UnionSetExpr
+normalizeResult = either (Left . show) normalizeUnionSet
 
 spec :: Spec
 spec = do
@@ -10,7 +20,8 @@ spec = do
             result <- runISL $ do
                 uset <- unionSet "{ A[i] : 0 <= i < 10; B[j] : 0 <= j < 5 }"
                 unionSetToString uset
-            result `shouldBe` Right "{ A[i] : 0 <= i <= 9; B[j] : 0 <= j <= 4 }"
+            normalizeResult result
+                `shouldBe` normalizeUnionSet "{ A[i] : 0 <= i <= 9; B[j] : 0 <= j <= 4 }"
 
         it "can compute union set union" $ do
             result <- runISL $ do
@@ -18,4 +29,5 @@ spec = do
                 u2 <- unionSet "{ B[j] : 0 <= j < 3 }"
                 combined <- unionSetUnion u1 u2
                 unionSetToString combined
-            result `shouldBe` Right "{ A[i] : 0 <= i <= 4; B[j] : 0 <= j <= 2 }"
+            normalizeResult result
+                `shouldBe` normalizeUnionSet "{ A[i] : 0 <= i <= 4; B[j] : 0 <= j <= 2 }"

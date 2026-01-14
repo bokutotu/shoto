@@ -6,20 +6,25 @@ module ISL.Ast.Show (
     mapExprToString,
     unionMapExprToString,
     affineExprToString,
+    pwAffineExprToString,
     multiAffineExprToString,
+    multiPwAffineExprToString,
+    multiUnionPwAffineExprToString,
     scheduleTreeToString,
     constraintToString,
     setExprToCompactString,
     unionSetExprToCompactString,
     mapExprToCompactString,
     unionMapExprToCompactString,
+    pwAffineExprToCompactString,
     multiAffineExprToCompactString,
+    multiPwAffineExprToCompactString,
+    multiUnionPwAffineExprToCompactString,
 ) where
 
 import           Data.List       (dropWhileEnd, intercalate)
 import qualified Data.Map.Strict as Map
-import           Data.Ratio      (denominator, numerator)
-import           Data.Text       (Text)
+import           Data.Maybe      (isNothing)
 import qualified Data.Text       as T
 import           ISL.Ast.Types
 
@@ -38,8 +43,17 @@ unionMapExprToString = renderLines . ppUnionMapExpr 0
 affineExprToString :: AffineExpr -> String
 affineExprToString = renderLines . ppAffineExprFull 0
 
+pwAffineExprToString :: PwAffineExpr -> String
+pwAffineExprToString = renderLines . ppPwAffineExprFull 0
+
 multiAffineExprToString :: MultiAffineExpr -> String
 multiAffineExprToString = renderLines . ppMultiAffineExpr 0
+
+multiPwAffineExprToString :: MultiPwAffineExpr -> String
+multiPwAffineExprToString = renderLines . ppMultiPwAffineExpr 0
+
+multiUnionPwAffineExprToString :: MultiUnionPwAffineExpr -> String
+multiUnionPwAffineExprToString = renderLines . ppMultiUnionPwAffineExpr 0
 
 scheduleTreeToString :: ScheduleTree -> String
 scheduleTreeToString = renderLines . ppScheduleTree 0
@@ -60,8 +74,17 @@ mapExprToCompactString = compactString . mapExprToString
 unionMapExprToCompactString :: UnionMapExpr -> String
 unionMapExprToCompactString = compactString . unionMapExprToString
 
+pwAffineExprToCompactString :: PwAffineExpr -> String
+pwAffineExprToCompactString = compactString . pwAffineExprToString
+
 multiAffineExprToCompactString :: MultiAffineExpr -> String
 multiAffineExprToCompactString = compactString . multiAffineExprToString
+
+multiPwAffineExprToCompactString :: MultiPwAffineExpr -> String
+multiPwAffineExprToCompactString = compactString . multiPwAffineExprToString
+
+multiUnionPwAffineExprToCompactString :: MultiUnionPwAffineExpr -> String
+multiUnionPwAffineExprToCompactString = compactString . multiUnionPwAffineExprToString
 
 renderLines :: [String] -> String
 renderLines = intercalate "\n"
@@ -78,7 +101,7 @@ ppSetExpr :: Int -> SetExpr -> [String]
 ppSetExpr base setExpr =
     let params = setExpr.setSpace.spaceParams
         header = indent base ++ ppParamsPrefix params ++ "{"
-        body = ppSetPart (base + 2) setExpr
+        body = joinPartsWithSemicolons (map (ppBasicSetPart (base + 2)) setExpr.setParts)
         footer = indent base ++ "}"
      in header : body ++ [footer]
 
@@ -86,7 +109,9 @@ ppUnionSetExpr :: Int -> UnionSetExpr -> [String]
 ppUnionSetExpr base (UnionSetExpr sets) =
     let params = commonParamsSet sets
         header = indent base ++ ppParamsPrefix params ++ "{"
-        body = joinPartsWithSemicolons (map (ppSetPart (base + 2)) sets)
+        body =
+            joinPartsWithSemicolons
+                (concatMap (map (ppBasicSetPart (base + 2)) . (.setParts)) sets)
         footer = indent base ++ "}"
      in header : body ++ [footer]
 
@@ -94,7 +119,7 @@ ppMapExpr :: Int -> MapExpr -> [String]
 ppMapExpr base mapExpr =
     let params = commonParamsMap [mapExpr]
         header = indent base ++ ppParamsPrefix params ++ "{"
-        body = ppMapPart (base + 2) mapExpr
+        body = joinPartsWithSemicolons (map (ppBasicMapPart (base + 2) mapExpr.mapSpace) mapExpr.mapParts)
         footer = indent base ++ "}"
      in header : body ++ [footer]
 
@@ -102,39 +127,43 @@ ppUnionMapExpr :: Int -> UnionMapExpr -> [String]
 ppUnionMapExpr base (UnionMapExpr maps) =
     let params = commonParamsMap maps
         header = indent base ++ ppParamsPrefix params ++ "{"
-        body = joinPartsWithSemicolons (map (ppMapPart (base + 2)) maps)
+        body =
+            joinPartsWithSemicolons
+                (concatMap (\mapExpr -> map (ppBasicMapPart (base + 2) mapExpr.mapSpace) mapExpr.mapParts) maps)
         footer = indent base ++ "}"
      in header : body ++ [footer]
 
-ppSetPart :: Int -> SetExpr -> [String]
-ppSetPart base (SetExpr space constraints) =
-    let locals = space.spaceLocals
+ppBasicSetPart :: Int -> BasicSet -> [String]
+ppBasicSetPart base (BasicSet localSpace constraints) =
+    let space = localSpace.localSpaceBase
         tupleLine =
             indent base
-                ++ ppTuple space.spaceName space.spaceInputs
+                ++ ppTupleIn space
                 ++ if null constraints then "" else " :"
-        constraintLines = ppConstraintsLines (base + 2) locals constraints
+        constraintLines = ppConstraintsLines (base + 2) localSpace constraints
      in tupleLine : constraintLines
 
-ppMapPart :: Int -> MapExpr -> [String]
-ppMapPart base (MapExpr dom ran constraints) =
-    let locals = dom.spaceLocals
-        domDims = spaceTupleInputs dom
-        ranDims = spaceTupleOutputs ran
-        tupleLine =
+ppBasicMapPart :: Int -> Space -> BasicMap -> [String]
+ppBasicMapPart base baseSpace (BasicMap localSpace constraints) =
+    let tupleLine =
             indent base
-                ++ ppTuple dom.spaceName domDims
+                ++ ppTupleIn baseSpace
                 ++ " -> "
-                ++ ppTuple ran.spaceName ranDims
+                ++ ppTupleOut baseSpace
                 ++ if null constraints then "" else " :"
-        constraintLines = ppConstraintsLines (base + 2) locals constraints
+        constraintLines = ppConstraintsLines (base + 2) localSpace constraints
      in tupleLine : constraintLines
 
-ppConstraintsLines :: Int -> [SpaceDim] -> [Constraint] -> [String]
+ppConstraintsLines :: Int -> LocalSpace -> [Constraint] -> [String]
 ppConstraintsLines _ _ [] = []
-ppConstraintsLines base locals constraints =
-    let constraintStrs = addAnd (map ppConstraintInline constraints)
-        wrapped = wrapExists locals constraintStrs
+ppConstraintsLines base localSpace constraints =
+    let localNames =
+            [ localDimDisplayName idx dim
+            | (idx, dim) <- zip [0 ..] localSpace.localSpaceDims
+            , isNothing dim.localDimDef
+            ]
+        constraintStrs = addAnd (map ppConstraintInline constraints)
+        wrapped = wrapExists localNames constraintStrs
      in map (indent base ++) wrapped
 
 ppConstraintInline :: Constraint -> String
@@ -142,69 +171,52 @@ ppConstraintInline (Constraint rel lhs rhs) =
     ppAffineExprInline lhs ++ " " ++ ppRelation rel ++ " " ++ ppAffineExprInline rhs
 
 ppAffineExprInline :: AffineExpr -> String
-ppAffineExprInline (AffineLinear lin) = ppLinearExpr lin
 ppAffineExprInline aff =
-    compactString (affineExprToString aff)
+    let ls = aff.affLocalSpace
+     in ppLinearExpr ls aff.affForm
 
 ppAffineExprFull :: Int -> AffineExpr -> [String]
-ppAffineExprFull base (AffineLinear lin) =
-    let space = lin.linearSpace
+ppAffineExprFull base aff =
+    let localSpace = aff.affLocalSpace
+        space = localSpace.localSpaceBase
         params = space.spaceParams
-        tuple = ppTuple space.spaceName space.spaceInputs
-        line = indent base ++ ppParamsPrefix params ++ "{ " ++ tuple ++ " -> " ++ ppLinearExpr lin ++ " }"
+        tuple = ppTupleIn space
+        line =
+            indent base
+                ++ ppParamsPrefix params
+                ++ "{ "
+                ++ tuple
+                ++ " -> "
+                ++ ppLinearExpr localSpace aff.affForm
+                ++ " }"
      in [line]
-ppAffineExprFull base (AffinePiecewise space parts) =
-    let params = space.spaceParams
+
+ppPwAffineExprFull :: Int -> PwAffineExpr -> [String]
+ppPwAffineExprFull base pw =
+    let params = pw.pwSpace.spaceParams
         header = indent base ++ ppParamsPrefix params ++ "{"
-        body = joinPartsWithSemicolons (map (ppAffinePiece (base + 2)) parts)
+        body = joinPartsWithSemicolons (map (ppPwAffinePiece (base + 2)) pw.pwPieces)
         footer = indent base ++ "}"
      in header : body ++ [footer]
 
-ppAffinePiece :: Int -> (SetExpr, LinearExpr) -> [String]
-ppAffinePiece base (setExpr, lin) =
-    let space = setExpr.setSpace
-        locals = space.spaceLocals
+ppPwAffineExprFullNoParams :: Int -> PwAffineExpr -> [String]
+ppPwAffineExprFullNoParams base pw =
+    let header = indent base ++ "{"
+        body = joinPartsWithSemicolons (map (ppPwAffinePiece (base + 2)) pw.pwPieces)
+        footer = indent base ++ "}"
+     in header : body ++ [footer]
+
+ppPwAffinePiece :: Int -> (BasicSet, AffineExpr) -> [String]
+ppPwAffinePiece base (basicSet, aff) =
+    let space = basicSet.basicSetSpace.localSpaceBase
         tupleLine =
             indent base
-                ++ ppTuple space.spaceName space.spaceInputs
+                ++ ppTupleIn space
                 ++ " -> "
-                ++ ppLinearExpr lin
-                ++ if null setExpr.setConstraints then "" else " :"
-        constraintLines = ppConstraintsLines (base + 2) locals setExpr.setConstraints
+                ++ ppLinearExpr aff.affLocalSpace aff.affForm
+                ++ if null basicSet.basicSetConstraints then "" else " :"
+        constraintLines = ppConstraintsLines (base + 2) basicSet.basicSetSpace basicSet.basicSetConstraints
      in tupleLine : constraintLines
-
-ppLinearExpr :: LinearExpr -> String
-ppLinearExpr (LinearExpr space constantVal coeffMap divs) =
-    let orderedRefs = dimRefsInOrder space
-        orderedTerms =
-            [ termFromCoeff ref coeff
-            | ref <- orderedRefs
-            , let coeff = Map.findWithDefault 0 ref coeffMap
-            , coeff /= 0
-            ]
-        extraTerms =
-            [ termFromCoeff ref coeff
-            | (ref, coeff) <- Map.toList coeffMap
-            , ref `notElem` orderedRefs
-            , coeff /= 0
-            ]
-        divTerms =
-            [ termFromDiv divTerm
-            | divTerm <- divs
-            , divTerm.divTermCoeff /= 0
-            ]
-        constTerms =
-            [ termFromConst constantVal
-            | not
-                ( constantVal == 0
-                    && ( not (null orderedTerms)
-                            || not (null extraTerms)
-                            || not (null divTerms)
-                       )
-                )
-            ]
-        terms = orderedTerms ++ extraTerms ++ divTerms ++ constTerms
-     in renderSignedTerms terms
 
 ppRelation :: Relation -> String
 ppRelation RelEq = "="
@@ -213,73 +225,110 @@ ppRelation RelGe = ">="
 
 ppParamsPrefix :: [SpaceDim] -> String
 ppParamsPrefix []   = ""
-ppParamsPrefix dims = ppDimList dims ++ " -> "
+ppParamsPrefix dims = ppDimListWith (spaceDimNameOr "p") dims ++ " -> "
 
-ppTuple :: Maybe Text -> [SpaceDim] -> String
-ppTuple name dims =
-    maybe "" T.unpack name ++ ppDimList dims
+ppTupleIn :: Space -> String
+ppTupleIn space = ppTupleWith (spaceDimNameOr "i") space.spaceIn
 
-ppDimList :: [SpaceDim] -> String
-ppDimList dims = "[" ++ intercalate ", " (map ppSpaceDim dims) ++ "]"
+ppTupleOut :: Space -> String
+ppTupleOut space = ppTupleWith (spaceDimNameOr "o") space.spaceOut
 
-ppLocalList :: [SpaceDim] -> String
-ppLocalList dims = intercalate ", " (map ppSpaceDim dims)
+ppTupleWith :: (Int -> SpaceDim -> String) -> Tuple -> String
+ppTupleWith nameForDim tuple =
+    maybe "" T.unpack tuple.tupleName ++ ppDimListWith nameForDim tuple.tupleDims
 
-ppSpaceDim :: SpaceDim -> String
-ppSpaceDim (SpaceDim name) = T.unpack name
+ppDimListWith :: (Int -> SpaceDim -> String) -> [SpaceDim] -> String
+ppDimListWith nameForDim dims =
+    "[" ++ intercalate ", " [nameForDim idx dim | (idx, dim) <- zip [0 ..] dims] ++ "]"
 
-spaceTupleInputs :: Space -> [SpaceDim]
-spaceTupleInputs space =
-    let inputs = space.spaceInputs
-        outputs = space.spaceOutputs
-     in if null inputs then outputs else inputs
+spaceDimNameOr :: String -> Int -> SpaceDim -> String
+spaceDimNameOr _ _ (SpaceDim (Just name))    = T.unpack name
+spaceDimNameOr prefix idx (SpaceDim Nothing) = prefix ++ show idx
 
-spaceTupleOutputs :: Space -> [SpaceDim]
-spaceTupleOutputs space =
-    let inputs = space.spaceInputs
-        outputs = space.spaceOutputs
-     in if null outputs then inputs else outputs
+localDimDisplayName :: Int -> LocalDim -> String
+localDimDisplayName idx dim = maybe ("t" ++ show idx) T.unpack dim.localDimName
 
-dimRefsInOrder :: Space -> [DimRef]
-dimRefsInOrder space =
-    map (DimRef ParamDim) space.spaceParams
-        ++ map (DimRef InDim) space.spaceInputs
-        ++ map (DimRef OutDim) space.spaceOutputs
-        ++ map (DimRef LocalDim) space.spaceLocals
+ppLinearExpr :: LocalSpace -> LinearExpr -> String
+ppLinearExpr localSpace expr =
+    let orderedRefs = dimRefsInOrder localSpace
+        orderedTerms =
+            [ termFromCoeff localSpace ref coeff
+            | ref <- orderedRefs
+            , let coeff = Map.findWithDefault 0 ref expr.linearCoeffs
+            , coeff /= 0
+            ]
+        extraTerms =
+            [ termFromCoeff localSpace ref coeff
+            | (ref, coeff) <- Map.toList expr.linearCoeffs
+            , ref `notElem` orderedRefs
+            , coeff /= 0
+            ]
+        constTerms =
+            [ termFromConst expr.linearConstant
+            | not
+                ( expr.linearConstant == 0
+                    && ( not (null orderedTerms)
+                            || not (null extraTerms)
+                       )
+                )
+            ]
+        terms = orderedTerms ++ extraTerms ++ constTerms
+     in renderSignedTerms terms
+
+dimRefsInOrder :: LocalSpace -> [DimRef]
+dimRefsInOrder localSpace =
+    let space = localSpace.localSpaceBase
+        params = space.spaceParams
+        inputs = space.spaceIn.tupleDims
+        outputs = space.spaceOut.tupleDims
+        locals = localSpace.localSpaceDims
+        paramRefs = [DimRef ParamDim idx | idx <- [0 .. length params - 1]]
+        inputRefs = [DimRef InDim idx | idx <- [0 .. length inputs - 1]]
+        outputRefs = [DimRef OutDim idx | idx <- [0 .. length outputs - 1]]
+        localRefs = [DimRef LocalDimKind idx | idx <- [0 .. length locals - 1]]
+     in paramRefs ++ inputRefs ++ outputRefs ++ localRefs
 
 data SignedTerm = SignedTerm Bool String
 
-termFromCoeff :: DimRef -> Rational -> SignedTerm
-termFromCoeff ref coeff =
+termFromCoeff :: LocalSpace -> DimRef -> Integer -> SignedTerm
+termFromCoeff localSpace ref coeff =
     let neg = coeff < 0
         absCoeff = abs coeff
-        name = ppSpaceDim ref.dimTarget
-        body =
-            if absCoeff == 1
-                then name
-                else showRational absCoeff ++ "*" ++ name
-     in SignedTerm neg body
-
-termFromDiv :: DivTerm -> SignedTerm
-termFromDiv (DivTerm coeff divExpr) =
-    let neg = coeff < 0
-        absCoeff = abs coeff
-        bodyExpr = ppDivExpr divExpr
+        bodyExpr = ppDimRef localSpace ref
         body =
             if absCoeff == 1
                 then bodyExpr
-                else showRational absCoeff ++ "*" ++ bodyExpr
+                else show absCoeff ++ "*" ++ bodyExpr
      in SignedTerm neg body
 
-termFromConst :: Rational -> SignedTerm
+ppDimRef :: LocalSpace -> DimRef -> String
+ppDimRef localSpace ref =
+    let space = localSpace.localSpaceBase
+     in case ref.dimKind of
+            ParamDim ->
+                let dim = space.spaceParams !! ref.dimPos
+                 in spaceDimNameOr "p" ref.dimPos dim
+            InDim ->
+                let dim = space.spaceIn.tupleDims !! ref.dimPos
+                 in spaceDimNameOr "i" ref.dimPos dim
+            OutDim ->
+                let dim = space.spaceOut.tupleDims !! ref.dimPos
+                 in spaceDimNameOr "o" ref.dimPos dim
+            LocalDimKind ->
+                let dim = localSpace.localSpaceDims !! ref.dimPos
+                 in case dim.localDimDef of
+                        Nothing  -> localDimDisplayName ref.dimPos dim
+                        Just def -> ppDivDef localSpace def
+
+termFromConst :: Integer -> SignedTerm
 termFromConst coeff =
     let neg = coeff < 0
-        body = showRational (abs coeff)
+        body = show (abs coeff)
      in SignedTerm neg body
 
-ppDivExpr :: DivExpr -> String
-ppDivExpr (DivExpr numer denom) =
-    "floor((" ++ ppLinearExpr numer ++ ")/" ++ show denom ++ ")"
+ppDivDef :: LocalSpace -> DivDef -> String
+ppDivDef localSpace (DivDef numer denom) =
+    "floor((" ++ ppLinearExpr localSpace numer ++ ")/" ++ show denom ++ ")"
 
 renderSignedTerms :: [SignedTerm] -> String
 renderSignedTerms [] = "0"
@@ -291,24 +340,18 @@ renderSignedTerms (SignedTerm neg body : rest) =
             ]
      in first ++ concat tailParts
 
-showRational :: Rational -> String
-showRational r =
-    let n = numerator r
-        d = denominator r
-     in if d == 1 then show n else show n ++ "/" ++ show d
-
 addAnd :: [String] -> [String]
 addAnd []       = []
 addAnd [x]      = [x]
 addAnd (x : xs) = (x ++ " and") : addAnd xs
 
-wrapExists :: [SpaceDim] -> [String] -> [String]
+wrapExists :: [String] -> [String] -> [String]
 wrapExists [] linesList = linesList
 wrapExists _ [] = []
 wrapExists locals [single] =
-    ["exists (" ++ ppLocalList locals ++ ": " ++ single ++ ")"]
+    ["exists (" ++ intercalate ", " locals ++ ": " ++ single ++ ")"]
 wrapExists locals (firstLine : rest) =
-    let prefix = "exists (" ++ ppLocalList locals ++ ": "
+    let prefix = "exists (" ++ intercalate ", " locals ++ ": "
         firstWithPrefix = prefix ++ firstLine
      in case reverse rest of
             [] -> [firstWithPrefix ++ ")"]
@@ -337,38 +380,69 @@ commonParamsSet (SetExpr space _ : rest) =
 
 commonParamsMap :: [MapExpr] -> [SpaceDim]
 commonParamsMap [] = []
-commonParamsMap (MapExpr dom ran _ : rest) =
-    let params = dom.spaceParams
-     in if params == ran.spaceParams && all (sameParams params) rest
+commonParamsMap (MapExpr space _ : rest) =
+    let params = space.spaceParams
+     in if all ((== params) . (.spaceParams) . (.mapSpace)) rest
             then params
             else error "UnionMapExpr has inconsistent parameters"
-  where
-    sameParams params (MapExpr dom' ran' _) =
-        dom'.spaceParams == params && ran'.spaceParams == params
-
-multiParts :: MultiAffineExpr -> [(Space, [AffineExpr])]
-multiParts (MultiAffineExpr space exprs) = [(space, exprs)]
-multiParts (MultiAffineUnion parts)      = parts
 
 ppMultiAffineExpr :: Int -> MultiAffineExpr -> [String]
-ppMultiAffineExpr base expr =
-    let parts = multiParts expr
-        params = commonParamsMulti parts
+ppMultiAffineExpr base (MultiAffineExpr space exprs) =
+    let params = space.spaceParams
         header = indent base ++ ppParamsPrefix params ++ "["
-        body = joinPartsWithSemicolons (map (ppMultiPart (base + 2)) parts)
-        footer = indent base ++ "]"
-     in header : body ++ [footer]
-
-ppMultiPart :: Int -> (Space, [AffineExpr]) -> [String]
-ppMultiPart base (space, exprs) =
-    let tupleLine =
-            indent base
+        body =
+            [ indent (base + 2)
                 ++ "{ "
-                ++ ppTuple space.spaceName space.spaceInputs
+                ++ ppTupleIn space
                 ++ " -> "
                 ++ ppAffineTuple exprs
                 ++ " }"
+            ]
+        footer = indent base ++ "]"
+     in header : body ++ [footer]
+
+ppMultiPwAffineExpr :: Int -> MultiPwAffineExpr -> [String]
+ppMultiPwAffineExpr base expr =
+    let params = expr.multiPwAffSpace.spaceParams
+        header = indent base ++ ppParamsPrefix params ++ "["
+        body = ppMultiPwAffinePart (base + 2) expr
+        footer = indent base ++ "]"
+     in header : body ++ [footer]
+
+ppMultiUnionPwAffineExpr :: Int -> MultiUnionPwAffineExpr -> [String]
+ppMultiUnionPwAffineExpr base (MultiUnionPwAffineExpr parts) =
+    let params = commonParamsMulti parts
+        header = indent base ++ ppParamsPrefix params ++ "["
+        body = joinPartsWithSemicolons (map (ppMultiPwAffinePart (base + 2)) parts)
+        footer = indent base ++ "]"
+     in header : body ++ [footer]
+
+ppMultiPwAffinePart :: Int -> MultiPwAffineExpr -> [String]
+ppMultiPwAffinePart base (MultiPwAffineExpr space exprs) =
+    let tupleLine =
+            indent base
+                ++ "{ "
+                ++ ppTupleIn space
+                ++ " -> "
+                ++ ppPwAffineTuple exprs
+                ++ " }"
      in [tupleLine]
+
+ppPwAffineTuple :: [PwAffineExpr] -> String
+ppPwAffineTuple exprs =
+    "[" ++ intercalate ", " (map ppPwAffineTupleElem exprs) ++ "]"
+
+ppPwAffineTupleElem :: PwAffineExpr -> String
+ppPwAffineTupleElem expr =
+    "(" ++ ppPwAffineExprInline expr ++ ")"
+
+ppPwAffineExprInline :: PwAffineExpr -> String
+ppPwAffineExprInline expr =
+    case expr.pwPieces of
+        [(basicSet, aff)]
+            | null basicSet.basicSetConstraints ->
+                ppLinearExpr aff.affLocalSpace aff.affForm
+        _ -> compactString (renderLines (ppPwAffineExprFullNoParams 0 expr))
 
 ppAffineTuple :: [AffineExpr] -> String
 ppAffineTuple exprs =
@@ -378,13 +452,13 @@ ppAffineTupleElem :: AffineExpr -> String
 ppAffineTupleElem expr =
     "(" ++ ppAffineExprInline expr ++ ")"
 
-commonParamsMulti :: [(Space, [AffineExpr])] -> [SpaceDim]
+commonParamsMulti :: [MultiPwAffineExpr] -> [SpaceDim]
 commonParamsMulti [] = []
-commonParamsMulti ((space, _) : rest) =
+commonParamsMulti (MultiPwAffineExpr space _ : rest) =
     let params = space.spaceParams
-     in if all ((== params) . (.spaceParams) . fst) rest
+     in if all ((== params) . (.spaceParams) . (.multiPwAffSpace)) rest
             then params
-            else error "MultiAffineExpr has inconsistent parameters"
+            else error "MultiUnionPwAffineExpr has inconsistent parameters"
 
 ppScheduleTree :: Int -> ScheduleTree -> [String]
 ppScheduleTree base tree =
@@ -403,12 +477,23 @@ ppScheduleTree base tree =
                 fieldWithChild "guard" (NodeScalar (quote (setExprToCompactString setExpr))) children
             TreeExtension umap children ->
                 fieldWithChild "extension" (NodeScalar (quote (unionMapExprToCompactString umap))) children
-            TreeBand bandExpr perm children ->
+            TreeExpansion umap children ->
+                fieldWithChild "expansion" (NodeScalar (quote (unionMapExprToCompactString umap))) children
+            TreeBand band children ->
                 let baseFields =
-                        [ ("schedule", NodeScalar (quote (multiAffineExprToCompactString bandExpr)))
-                        , ("permutable", NodeScalar (if perm then "1" else "0"))
+                        [ ("schedule", NodeScalar (quote (multiUnionPwAffineExprToCompactString band.bandSchedule)))
+                        , ("permutable", NodeScalar (if band.bandPermutable then "1" else "0"))
                         ]
-                 in baseFields ++ childField children
+                    coincidentField =
+                        [ ("coincident", NodeScalar (ppBoolList band.bandCoincident))
+                        | not (null band.bandCoincident)
+                        ]
+                    optionsField =
+                        case band.bandAstBuildOptions of
+                            Nothing -> []
+                            Just opts ->
+                                [("ast_build_options", NodeScalar (quote (unionSetExprToCompactString opts)))]
+                 in baseFields ++ coincidentField ++ optionsField ++ childField children
             TreeMark name children ->
                 fieldWithChild "mark" (NodeScalar (quote (T.unpack name))) children
             TreeSequence children ->
@@ -417,6 +502,10 @@ ppScheduleTree base tree =
                 [("set", NodeList children)]
             TreeLeaf ->
                 []
+
+ppBoolList :: [Bool] -> String
+ppBoolList values =
+    "[" ++ intercalate ", " [if v then "1" else "0" | v <- values] ++ "]"
 
 data NodeValue
     = NodeScalar String
@@ -518,5 +607,4 @@ quote str = "\"" ++ concatMap escapeChar str ++ "\""
 escapeChar :: Char -> String
 escapeChar '"'  = "\\\""
 escapeChar '\\' = "\\\\"
-escapeChar '\n' = "\\n"
 escapeChar c    = [c]

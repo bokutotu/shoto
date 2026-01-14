@@ -1,7 +1,7 @@
 name: isl
 version: 0.0.0.1
 license: MIT
-license-file: ../LICENSE
+license-file: LICENSE
 maintainer: mushin.hudoushin@gmail.com
 author: Hikaru KONDO
 synopsis: Haskell bindings for Integer Set Library (ISL)
