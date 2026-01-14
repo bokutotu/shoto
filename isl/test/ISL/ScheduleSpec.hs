@@ -1,7 +1,7 @@
 module ISL.ScheduleSpec (spec) where
 
-import ISL
-import Test.Hspec
+import           ISL
+import           Test.Hspec
 
 spec :: Spec
 spec = do
@@ -12,7 +12,8 @@ spec = do
                     schedule
                         "{ domain: \"{ S[i] : 0 <= i < 10 }\", child: { schedule: \"[{ S[i] -> [i] }]\" } }"
                 scheduleToString sched
-            result `shouldBe` Right "{ domain: \"{ S[i] : 0 <= i <= 9 }\", child: { schedule: \"[{ S[i] -> [(i)] }]\" } }"
+            result
+                `shouldBe` Right "{ domain: \"{ S[i] : 0 <= i <= 9 }\", child: { schedule: \"[{ S[i] -> [(i)] }]\" } }"
 
         it "can get schedule domain" $ do
             result <- runISL $ do

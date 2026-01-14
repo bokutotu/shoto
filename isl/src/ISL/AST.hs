@@ -1,107 +1,85 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module ISL.Ast (
-    SpaceDim (..),
-    spaceDim,
-    DimKind (..),
-    DimRef (..),
-    Space (..),
-    LinearExpr (..),
-    AffineExpr (..),
-    Relation (..),
-    Constraint (..),
-    SetExpr (..),
-    UnionSetExpr (..),
-    MapExpr (..),
-    UnionMapExpr (..),
-    MultiAffineExpr (..),
-    ScheduleTree (..),
+    module ISL.Ast.Types,
+    setExprToString,
+    unionSetExprToString,
+    mapExprToString,
+    unionMapExprToString,
+    affineExprToString,
+    multiAffineExprToString,
+    scheduleTreeToString,
+    constraintToString,
+    parseSetExpr,
+    parseUnionSetExpr,
+    parseMapExpr,
+    parseUnionMapExpr,
+    parseAffineExpr,
+    parseMultiAffineExpr,
+    parseScheduleTree,
+    parseConstraint,
 ) where
 
-import           Data.Map.Strict (Map)
-import           Data.Text       (Text)
+import           ISL.Ast.Read  (parseAffineExpr, parseConstraint, parseMapExpr,
+                                parseMultiAffineExpr, parseScheduleTree,
+                                parseSetExpr, parseUnionMapExpr,
+                                parseUnionSetExpr)
+import           ISL.Ast.Show  (affineExprToString, constraintToString,
+                                mapExprToString, multiAffineExprToString,
+                                scheduleTreeToString, setExprToString,
+                                unionMapExprToString, unionSetExprToString)
+import           ISL.Ast.Types
 
--- | Named dimension that belongs to a particular space.
-newtype SpaceDim = SpaceDim {spaceDimName :: Text}
-    deriving (Eq, Ord, Show)
+instance Show SetExpr where
+    show = setExprToString
 
-spaceDim :: Text -> SpaceDim
-spaceDim = SpaceDim
+instance Show UnionSetExpr where
+    show = unionSetExprToString
 
-data DimKind = ParamDim | InDim | OutDim
-    deriving (Eq, Ord, Show)
+instance Show MapExpr where
+    show = mapExprToString
 
--- | Handle that refers to a declared dimension with its original kind.
-data DimRef = DimRef
-    { dimKind   :: DimKind
-    , dimTarget :: SpaceDim
-    }
-    deriving (Eq, Ord, Show)
+instance Show UnionMapExpr where
+    show = unionMapExprToString
 
--- | ISL space, enumerating parameters, inputs, and outputs.
-data Space = Space
-    { spaceName    :: Maybe Text
-    , spaceParams  :: [SpaceDim]
-    , spaceInputs  :: [SpaceDim]
-    , spaceOutputs :: [SpaceDim]
-    }
-    deriving (Eq, Show)
+instance Show AffineExpr where
+    show = affineExprToString
 
--- | Affine expression (isl_aff) over a single space.
-data LinearExpr = LinearExpr
-    { linearSpace :: Space
-    , constant    :: Rational
-    , coeffs      :: Map DimRef Rational
-    }
-    deriving (Eq, Show)
+instance Show Constraint where
+    show = constraintToString
 
--- | Piecewise affine expression (isl_pw_aff / isl_multi_pw_aff).
-data AffineExpr
-    = AffineLinear LinearExpr
-    | AffinePiecewise Space [(SetExpr, LinearExpr)]
-    deriving (Eq, Show)
+instance Show MultiAffineExpr where
+    show = multiAffineExprToString
 
-data Relation = RelEq | RelLe | RelGe
-    deriving (Eq, Show)
+instance Show ScheduleTree where
+    show = scheduleTreeToString
 
-data Constraint = Constraint
-    { constraintRel :: Relation
-    , lhsExpr       :: AffineExpr
-    , rhsExpr       :: AffineExpr
-    }
-    deriving (Eq, Show)
+instance Read SetExpr where
+    readsPrec _ = readWith parseSetExpr
 
-data SetExpr = SetExpr
-    { setSpace       :: Space
-    , setConstraints :: [Constraint]
-    }
-    deriving (Eq, Show)
+instance Read UnionSetExpr where
+    readsPrec _ = readWith parseUnionSetExpr
 
-newtype UnionSetExpr = UnionSetExpr [SetExpr]
-    deriving (Eq, Show)
+instance Read MapExpr where
+    readsPrec _ = readWith parseMapExpr
 
-data MapExpr = MapExpr
-    { mapDomain      :: Space
-    , mapRange       :: Space
-    , mapConstraints :: [Constraint]
-    }
-    deriving (Eq, Show)
+instance Read UnionMapExpr where
+    readsPrec _ = readWith parseUnionMapExpr
 
-newtype UnionMapExpr = UnionMapExpr [MapExpr]
-    deriving (Eq, Show)
+instance Read AffineExpr where
+    readsPrec _ = readWith parseAffineExpr
 
-data MultiAffineExpr = MultiAffineExpr
-    { multiSpace :: Space
-    , multiExprs :: [AffineExpr]
-    }
-    deriving (Eq, Show)
+instance Read Constraint where
+    readsPrec _ = readWith parseConstraint
 
-data ScheduleTree
-    = TreeBand MultiAffineExpr Bool [ScheduleTree]
-    | TreeContext SetExpr [ScheduleTree]
-    | TreeDomain UnionSetExpr [ScheduleTree]
-    | TreeFilter UnionSetExpr [ScheduleTree]
-    | TreeExtension UnionMapExpr [ScheduleTree]
-    | TreeGuard SetExpr [ScheduleTree]
-    | TreeSequence [ScheduleTree]
-    | TreeSet [ScheduleTree]
-    | TreeLeaf
-    deriving (Eq, Show)
+instance Read MultiAffineExpr where
+    readsPrec _ = readWith parseMultiAffineExpr
+
+instance Read ScheduleTree where
+    readsPrec _ = readWith parseScheduleTree
+
+readWith :: (String -> Either String a) -> ReadS a
+readWith parser input =
+    case parser input of
+        Left _       -> []
+        Right result -> [(result, "")]

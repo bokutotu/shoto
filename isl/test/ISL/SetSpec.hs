@@ -1,7 +1,7 @@
 module ISL.SetSpec (spec) where
 
-import ISL
-import Test.Hspec
+import           ISL
+import           Test.Hspec
 
 spec :: Spec
 spec = do
