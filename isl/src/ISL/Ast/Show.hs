@@ -106,16 +106,18 @@ ppUnionMapExpr base (UnionMapExpr maps) =
 
 ppSetPart :: Int -> SetExpr -> [String]
 ppSetPart base (SetExpr space constraints) =
-    let tupleLine =
+    let locals = spaceLocals space
+        tupleLine =
             indent base
                 ++ ppTuple (spaceName space) (spaceInputs space)
                 ++ if null constraints then "" else " :"
-        constraintLines = ppConstraintsLines (base + 2) constraints
+        constraintLines = ppConstraintsLines (base + 2) locals constraints
      in tupleLine : constraintLines
 
 ppMapPart :: Int -> MapExpr -> [String]
 ppMapPart base (MapExpr dom ran constraints) =
-    let domDims = spaceTupleInputs dom
+    let locals = spaceLocals dom
+        domDims = spaceTupleInputs dom
         ranDims = spaceTupleOutputs ran
         tupleLine =
             indent base
@@ -123,14 +125,15 @@ ppMapPart base (MapExpr dom ran constraints) =
                 ++ " -> "
                 ++ ppTuple (spaceName ran) ranDims
                 ++ if null constraints then "" else " :"
-        constraintLines = ppConstraintsLines (base + 2) constraints
+        constraintLines = ppConstraintsLines (base + 2) locals constraints
      in tupleLine : constraintLines
 
-ppConstraintsLines :: Int -> [Constraint] -> [String]
-ppConstraintsLines _ [] = []
-ppConstraintsLines base constraints =
+ppConstraintsLines :: Int -> [SpaceDim] -> [Constraint] -> [String]
+ppConstraintsLines _ _ [] = []
+ppConstraintsLines base locals constraints =
     let constraintStrs = addAnd (map ppConstraintInline constraints)
-     in map (indent base ++) constraintStrs
+        wrapped = wrapExists locals constraintStrs
+     in map (indent base ++) wrapped
 
 ppConstraintInline :: Constraint -> String
 ppConstraintInline (Constraint rel lhs rhs) =
@@ -158,17 +161,18 @@ ppAffineExprFull base (AffinePiecewise space parts) =
 ppAffinePiece :: Int -> (SetExpr, LinearExpr) -> [String]
 ppAffinePiece base (setExpr, lin) =
     let space = setSpace setExpr
+        locals = spaceLocals space
         tupleLine =
             indent base
                 ++ ppTuple (spaceName space) (spaceInputs space)
                 ++ " -> "
                 ++ ppLinearExpr lin
                 ++ if null (setConstraints setExpr) then "" else " :"
-        constraintLines = ppConstraintsLines (base + 2) (setConstraints setExpr)
+        constraintLines = ppConstraintsLines (base + 2) locals (setConstraints setExpr)
      in tupleLine : constraintLines
 
 ppLinearExpr :: LinearExpr -> String
-ppLinearExpr (LinearExpr space constantVal coeffMap) =
+ppLinearExpr (LinearExpr space constantVal coeffMap divs) =
     let orderedRefs = dimRefsInOrder space
         orderedTerms =
             [ termFromCoeff ref coeff
@@ -182,11 +186,22 @@ ppLinearExpr (LinearExpr space constantVal coeffMap) =
             , ref `notElem` orderedRefs
             , coeff /= 0
             ]
+        divTerms =
+            [ termFromDiv divTerm
+            | divTerm <- divs
+            , divTermCoeff divTerm /= 0
+            ]
         constTerms =
             [ termFromConst constantVal
-            | not (constantVal == 0 && (not (null orderedTerms) || not (null extraTerms)))
+            | not
+                ( constantVal == 0
+                    && ( not (null orderedTerms)
+                            || not (null extraTerms)
+                            || not (null divTerms)
+                       )
+                )
             ]
-        terms = orderedTerms ++ extraTerms ++ constTerms
+        terms = orderedTerms ++ extraTerms ++ divTerms ++ constTerms
      in renderSignedTerms terms
 
 ppRelation :: Relation -> String
@@ -204,6 +219,9 @@ ppTuple name dims =
 
 ppDimList :: [SpaceDim] -> String
 ppDimList dims = "[" ++ intercalate ", " (map ppSpaceDim dims) ++ "]"
+
+ppLocalList :: [SpaceDim] -> String
+ppLocalList dims = intercalate ", " (map ppSpaceDim dims)
 
 ppSpaceDim :: SpaceDim -> String
 ppSpaceDim (SpaceDim name) = T.unpack name
@@ -225,6 +243,7 @@ dimRefsInOrder space =
     map (DimRef ParamDim) (spaceParams space)
         ++ map (DimRef InDim) (spaceInputs space)
         ++ map (DimRef OutDim) (spaceOutputs space)
+        ++ map (DimRef LocalDim) (spaceLocals space)
 
 data SignedTerm = SignedTerm Bool String
 
@@ -239,11 +258,26 @@ termFromCoeff ref coeff =
                 else showRational absCoeff ++ "*" ++ name
      in SignedTerm neg body
 
+termFromDiv :: DivTerm -> SignedTerm
+termFromDiv (DivTerm coeff divExpr) =
+    let neg = coeff < 0
+        absCoeff = abs coeff
+        bodyExpr = ppDivExpr divExpr
+        body =
+            if absCoeff == 1
+                then bodyExpr
+                else showRational absCoeff ++ "*" ++ bodyExpr
+     in SignedTerm neg body
+
 termFromConst :: Rational -> SignedTerm
 termFromConst coeff =
     let neg = coeff < 0
         body = showRational (abs coeff)
      in SignedTerm neg body
+
+ppDivExpr :: DivExpr -> String
+ppDivExpr (DivExpr numer denom) =
+    "floor((" ++ ppLinearExpr numer ++ ")/" ++ show denom ++ ")"
 
 renderSignedTerms :: [SignedTerm] -> String
 renderSignedTerms [] = "0"
@@ -265,6 +299,18 @@ addAnd :: [String] -> [String]
 addAnd []       = []
 addAnd [x]      = [x]
 addAnd (x : xs) = (x ++ " and") : addAnd xs
+
+wrapExists :: [SpaceDim] -> [String] -> [String]
+wrapExists [] linesList = linesList
+wrapExists _ [] = []
+wrapExists locals [single] =
+    ["exists (" ++ ppLocalList locals ++ ": " ++ single ++ ")"]
+wrapExists locals (firstLine : rest) =
+    let prefix = "exists (" ++ ppLocalList locals ++ ": "
+        firstWithPrefix = prefix ++ firstLine
+     in case reverse rest of
+            [] -> [firstWithPrefix ++ ")"]
+            lastLine : revMiddle -> firstWithPrefix : reverse revMiddle ++ [lastLine ++ ")"]
 
 joinPartsWithSemicolons :: [[String]] -> [String]
 joinPartsWithSemicolons [] = []

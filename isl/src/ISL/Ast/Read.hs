@@ -83,6 +83,9 @@ pIdent = lexeme $ do
 pDimList :: Parser [SpaceDim]
 pDimList = between (symbol "[") (symbol "]") (pIdent `sepBy` symbol ",") <&> map SpaceDim
 
+pLocalList :: Parser [SpaceDim]
+pLocalList = pIdent `sepBy1` symbol "," <&> map SpaceDim
+
 pTuple :: Parser (Maybe Text, [SpaceDim])
 pTuple = try namedTuple <|> unnamedTuple
   where
@@ -116,9 +119,12 @@ pSetPart params = do
                 , spaceParams = params
                 , spaceInputs = dims
                 , spaceOutputs = []
+                , spaceLocals = []
                 }
     constraints <- optional (symbol ":" *> pConstraints space)
-    pure $ SetExpr space (fromMaybe [] constraints)
+    case constraints of
+        Nothing -> pure $ SetExpr space []
+        Just (spaceWithLocals, cons) -> pure $ SetExpr spaceWithLocals cons
 
 pMapExpr :: Parser MapExpr
 pMapExpr = do
@@ -144,6 +150,7 @@ pMapPart params = do
                 , spaceParams = params
                 , spaceInputs = domDims
                 , spaceOutputs = []
+                , spaceLocals = []
                 }
         ranSpace =
             Space
@@ -151,6 +158,7 @@ pMapPart params = do
                 , spaceParams = params
                 , spaceInputs = []
                 , spaceOutputs = ranDims
+                , spaceLocals = []
                 }
         mapSpace =
             Space
@@ -158,12 +166,40 @@ pMapPart params = do
                 , spaceParams = params
                 , spaceInputs = domDims
                 , spaceOutputs = ranDims
+                , spaceLocals = []
                 }
     constraints <- optional (symbol ":" *> pConstraints mapSpace)
-    pure $ MapExpr domSpace ranSpace (fromMaybe [] constraints)
+    case constraints of
+        Nothing -> pure $ MapExpr domSpace ranSpace []
+        Just (mapSpaceWithLocals, cons) ->
+            let locals = spaceLocals mapSpaceWithLocals
+                domSpace' = domSpace{spaceLocals = locals}
+                ranSpace' = ranSpace{spaceLocals = locals}
+             in pure $ MapExpr domSpace' ranSpace' cons
 
-pConstraints :: Space -> Parser [Constraint]
-pConstraints space = concat <$> pConstraintChain space `sepBy1` keyword "and"
+pConstraints :: Space -> Parser (Space, [Constraint])
+pConstraints space = do
+    existsBlock <- optional (try (pExistsBlock space))
+    case existsBlock of
+        Nothing -> do
+            constraints <- pConstraintGroup space
+            pure (space, constraints)
+        Just (spaceWithLocals, constraints) -> do
+            rest <- optional (keyword "and" *> pConstraintGroup spaceWithLocals)
+            pure (spaceWithLocals, constraints ++ fromMaybe [] rest)
+
+pConstraintGroup :: Space -> Parser [Constraint]
+pConstraintGroup space = concat <$> pConstraintChain space `sepBy1` keyword "and"
+
+pExistsBlock :: Space -> Parser (Space, [Constraint])
+pExistsBlock space = do
+    _ <- keyword "exists"
+    between (symbol "(") (symbol ")") $ do
+        locals <- pLocalList
+        _ <- symbol ":"
+        let spaceWithLocals = space{spaceLocals = locals}
+        constraints <- pConstraintGroup spaceWithLocals
+        pure (spaceWithLocals, constraints)
 
 pConstraintChain :: Space -> Parser [Constraint]
 pConstraintChain space = do
@@ -227,12 +263,16 @@ pAffinePiece params = do
                 , spaceParams = params
                 , spaceInputs = dims
                 , spaceOutputs = []
+                , spaceLocals = []
                 }
     _ <- symbol "->"
     lin <- pLinearExpr space
     constraints <- optional (symbol ":" *> pConstraints space)
-    let setExpr = SetExpr space (fromMaybe [] constraints)
-    pure (setExpr, lin)
+    case constraints of
+        Nothing -> pure (SetExpr space [], lin)
+        Just (spaceWithLocals, cons) ->
+            let setExpr = SetExpr spaceWithLocals cons
+             in pure (setExpr, lin)
 
 commonPieceSpace :: [(SetExpr, LinearExpr)] -> Parser Space
 commonPieceSpace [] = fail "expected affine pieces"
@@ -274,6 +314,7 @@ pMultiPartBody params = do
                 , spaceParams = params
                 , spaceInputs = dims
                 , spaceOutputs = []
+                , spaceLocals = []
                 }
     _ <- symbol "->"
     exprs <- pAffineTuple space
@@ -492,6 +533,7 @@ buildScheduleTree fields =
 data Term
     = TermConst Rational
     | TermVar Rational DimRef
+    | TermDiv Rational DivExpr
 
 pLinearExpr :: Space -> Parser LinearExpr
 pLinearExpr space = do
@@ -501,17 +543,18 @@ pLinearExpr space = do
             case Map.lookup name dimMap of
                 Nothing  -> fail $ "unknown dimension: " ++ T.unpack name
                 Just ref -> pure ref
-    first <- pSignedTerm pVar
-    rest <- many ((,) <$> pAddOp <*> pTerm pVar)
+        pDiv = pDivExpr space
+    first <- pSignedTerm pVar pDiv
+    rest <- many ((,) <$> pAddOp <*> pTerm pVar pDiv)
     let terms = first : map applyOp rest
     pure $ linearFromTerms space terms
   where
     applyOp (op, term) = op term
 
-pSignedTerm :: Parser DimRef -> Parser Term
-pSignedTerm pVar = do
+pSignedTerm :: Parser DimRef -> Parser DivExpr -> Parser Term
+pSignedTerm pVar pDiv = do
     sign <- optional (symbol "-" <|> symbol "+")
-    term <- pTerm pVar
+    term <- pTerm pVar pDiv
     pure $ case sign of
         Just "-" -> negateTerm term
         _        -> term
@@ -521,14 +564,21 @@ pAddOp =
     (symbol "+" $> id)
         <|> (symbol "-" $> negateTerm)
 
-pTerm :: Parser DimRef -> Parser Term
-pTerm pVar =
+pTerm :: Parser DimRef -> Parser DivExpr -> Parser Term
+pTerm pVar pDiv =
     try
         ( do
             coeff <- pNumber
             _ <- symbol "*"
-            TermVar coeff <$> pVar
+            TermDiv coeff <$> pDiv
         )
+        <|> try
+            ( do
+                coeff <- pNumber
+                _ <- symbol "*"
+                TermVar coeff <$> pVar
+            )
+        <|> (TermDiv 1 <$> pDiv)
         <|> (TermVar 1 <$> pVar)
         <|> (TermConst <$> pNumber)
 
@@ -543,17 +593,32 @@ pNumber = lexeme $ do
 negateTerm :: Term -> Term
 negateTerm (TermConst v)   = TermConst (-v)
 negateTerm (TermVar v ref) = TermVar (-v) ref
+negateTerm (TermDiv v expr) = TermDiv (-v) expr
 
 linearFromTerms :: Space -> [Term] -> LinearExpr
 linearFromTerms space terms =
-    let (cVal, coeffMap) = foldl step (0, Map.empty) terms
+    let (cVal, coeffMap, divAcc) = foldl step (0, Map.empty, []) terms
         filtered = Map.filter (/= 0) coeffMap
-     in LinearExpr space cVal filtered
+        divTerms = [DivTerm coeff expr | DivTerm coeff expr <- reverse divAcc, coeff /= 0]
+     in LinearExpr space cVal filtered divTerms
   where
-    step (cAcc, mAcc) term =
+    step (cAcc, mAcc, dAcc) term =
         case term of
-            TermConst v   -> (cAcc + v, mAcc)
-            TermVar v ref -> (cAcc, Map.insertWith (+) ref v mAcc)
+            TermConst v   -> (cAcc + v, mAcc, dAcc)
+            TermVar v ref -> (cAcc, Map.insertWith (+) ref v mAcc, dAcc)
+            TermDiv v expr -> (cAcc, mAcc, DivTerm v expr : dAcc)
+
+pDivExpr :: Space -> Parser DivExpr
+pDivExpr space = do
+    _ <- keyword "floor" <|> keyword "floord"
+    _ <- symbol "("
+    numerator <-
+        try (between (symbol "(") (symbol ")") (pLinearExpr space))
+            <|> pLinearExpr space
+    _ <- symbol "/"
+    denom <- lexeme L.decimal
+    _ <- symbol ")"
+    pure $ DivExpr numerator denom
 
 dimMapOrFail :: Space -> Parser (Map Text DimRef)
 dimMapOrFail space =
@@ -561,6 +626,7 @@ dimMapOrFail space =
             [(spaceDimName d, DimRef ParamDim d) | d <- spaceParams space]
                 ++ [(spaceDimName d, DimRef InDim d) | d <- spaceInputs space]
                 ++ [(spaceDimName d, DimRef OutDim d) | d <- spaceOutputs space]
+                ++ [(spaceDimName d, DimRef LocalDim d) | d <- spaceLocals space]
         dimMap = Map.fromList entries
      in if Map.size dimMap /= length entries
             then fail "duplicate dimension name"

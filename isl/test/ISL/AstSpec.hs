@@ -26,6 +26,46 @@ spec = do
                 nonStrict = "{ [i] : i <= 9 }"
             Ast.parseSetExpr strict `shouldBe` Ast.parseSetExpr nonStrict
 
+        it "parses local dimensions in constraints" $ do
+            let input = "{ [i] : exists (e0: i - 2*e0 = 0) }"
+                dimI = Ast.spaceDim "i"
+                dimE0 = Ast.spaceDim "e0"
+                space =
+                    Ast.Space
+                        { Ast.spaceName = Nothing
+                        , Ast.spaceParams = []
+                        , Ast.spaceInputs = [dimI]
+                        , Ast.spaceOutputs = []
+                        , Ast.spaceLocals = [dimE0]
+                        }
+                refI = Ast.DimRef Ast.InDim dimI
+                refE0 = Ast.DimRef Ast.LocalDim dimE0
+                lhs = Ast.LinearExpr space 0 (Map.fromList [(refI, 1), (refE0, -2)]) []
+                rhs = Ast.LinearExpr space 0 Map.empty []
+                constraint = Ast.Constraint Ast.RelEq (Ast.AffineLinear lhs) (Ast.AffineLinear rhs)
+                expected = Ast.SetExpr space [constraint]
+            Ast.parseSetExpr input `shouldBe` Right expected
+
+        it "parses floor divisions in constraints" $ do
+            let input = "{ [i] : i - floor((i)/2) = 0 }"
+                dimI = Ast.spaceDim "i"
+                space =
+                    Ast.Space
+                        { Ast.spaceName = Nothing
+                        , Ast.spaceParams = []
+                        , Ast.spaceInputs = [dimI]
+                        , Ast.spaceOutputs = []
+                        , Ast.spaceLocals = []
+                        }
+                refI = Ast.DimRef Ast.InDim dimI
+                numerator = Ast.LinearExpr space 0 (Map.singleton refI 1) []
+                divExpr = Ast.DivExpr numerator 2
+                lhs = Ast.LinearExpr space 0 (Map.singleton refI 1) [Ast.DivTerm (-1) divExpr]
+                rhs = Ast.LinearExpr space 0 Map.empty []
+                constraint = Ast.Constraint Ast.RelEq (Ast.AffineLinear lhs) (Ast.AffineLinear rhs)
+                expected = Ast.SetExpr space [constraint]
+            Ast.parseSetExpr input `shouldBe` Right expected
+
 sampleSetExpr :: Ast.SetExpr
 sampleSetExpr =
     let paramN = Ast.spaceDim "N"
@@ -36,11 +76,12 @@ sampleSetExpr =
                 , Ast.spaceParams = [paramN]
                 , Ast.spaceInputs = [dimI]
                 , Ast.spaceOutputs = []
+                , Ast.spaceLocals = []
                 }
         refN = Ast.DimRef Ast.ParamDim paramN
         refI = Ast.DimRef Ast.InDim dimI
-        linearConst n = Ast.LinearExpr space n Map.empty
-        linearVar ref = Ast.LinearExpr space 0 (Map.singleton ref 1)
+        linearConst n = Ast.LinearExpr space n Map.empty []
+        linearVar ref = Ast.LinearExpr space 0 (Map.singleton ref 1) []
         affineConst n = Ast.AffineLinear (linearConst n)
         affineVar ref = Ast.AffineLinear (linearVar ref)
         lower = Ast.Constraint Ast.RelLe (affineConst 0) (affineVar refI)

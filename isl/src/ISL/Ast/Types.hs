@@ -4,6 +4,8 @@ module ISL.Ast.Types (
     DimKind (..),
     DimRef (..),
     Space (..),
+    DivExpr (..),
+    DivTerm (..),
     LinearExpr (..),
     AffineExpr (..),
     Relation (..),
@@ -26,7 +28,7 @@ newtype SpaceDim = SpaceDim {spaceDimName :: Text}
 spaceDim :: Text -> SpaceDim
 spaceDim = SpaceDim
 
-data DimKind = ParamDim | InDim | OutDim
+data DimKind = ParamDim | InDim | OutDim | LocalDim
     deriving (Eq, Ord, Show)
 
 -- | Handle that refers to a declared dimension with its original kind.
@@ -36,12 +38,26 @@ data DimRef = DimRef
     }
     deriving (Eq, Ord, Show)
 
--- | ISL space, enumerating parameters, inputs, and outputs.
+-- | ISL space, enumerating parameters, inputs, outputs, and locals.
 data Space = Space
     { spaceName    :: Maybe Text
     , spaceParams  :: [SpaceDim]
     , spaceInputs  :: [SpaceDim]
     , spaceOutputs :: [SpaceDim]
+    , spaceLocals  :: [SpaceDim]
+    }
+    deriving (Eq, Show)
+
+-- | Integer division term used inside affine expressions.
+data DivExpr = DivExpr
+    { divNumerator   :: LinearExpr
+    , divDenominator :: Integer
+    }
+    deriving (Eq, Show)
+
+data DivTerm = DivTerm
+    { divTermCoeff :: Rational
+    , divTermExpr  :: DivExpr
     }
     deriving (Eq, Show)
 
@@ -50,6 +66,7 @@ data LinearExpr = LinearExpr
     { linearSpace :: Space
     , constant    :: Rational
     , coeffs      :: Map DimRef Rational
+    , divTerms    :: [DivTerm]
     }
     deriving (Eq, Show)
 
