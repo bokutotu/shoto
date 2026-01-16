@@ -62,6 +62,7 @@ module ISL.FFI (
     c_sched_read,
     c_sched_to_str,
     c_sched_free,
+    c_sched_copy,
     c_sched_from_domain,
     c_sched_get_domain,
 
@@ -372,6 +373,9 @@ foreign import ccall "isl/schedule.h isl_schedule_to_str"
 
 foreign import ccall "isl/schedule.h isl_schedule_free"
     c_sched_free :: RawSchedule -> IO ()
+
+foreign import ccall "isl/schedule.h isl_schedule_copy"
+    c_sched_copy :: RawSchedule -> IO RawSchedule
 
 foreign import ccall "isl/schedule.h isl_schedule_from_domain"
     c_sched_from_domain :: RawUnionSet -> IO RawSchedule
