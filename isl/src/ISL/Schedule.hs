@@ -10,6 +10,7 @@ module ISL.Schedule (
     scheduleToString,
     scheduleDomain,
     scheduleFromDomain,
+    scheduleIsEqual,
 ) where
 
 import           Control.Exception      (bracket)
@@ -52,3 +53,13 @@ scheduleFromDomain (UnionSet fp) = do
             cptr <- c_uset_copy ptr
             c_sched_from_domain cptr
     manage c_sched_free "isl_schedule_from_domain" mk Schedule
+
+-- | Check if two schedules are equal (plain equality)
+scheduleIsEqual :: Schedule s -> Schedule s -> ISL s Bool
+scheduleIsEqual (Schedule fa) (Schedule fb) = do
+    result <- liftIO $ withForeignPtr fa $ \pa ->
+        withForeignPtr fb $ \pb -> c_sched_plain_is_equal pa pb
+    case result of
+        -1 -> throwISL "isl_schedule_plain_is_equal"
+        0  -> pure False
+        _  -> pure True

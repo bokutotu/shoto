@@ -16,6 +16,7 @@ module ISL.Set (
     setSubtract,
     (\\),
     setCoalesce,
+    setIsEqual,
 
     -- * UnionSet Operations
     unionSet,
@@ -24,6 +25,7 @@ module ISL.Set (
     unionSetIntersect,
     unionSetSubtract,
     unionSetCoalesce,
+    unionSetIsEqual,
 ) where
 
 import           Control.Exception      (bracket)
@@ -95,6 +97,16 @@ setCoalesce (Set fp) = do
             c_set_coalesce cptr
     manage c_set_free "isl_set_coalesce" mk Set
 
+-- | Check if two sets are equal
+setIsEqual :: Set s -> Set s -> ISL s Bool
+setIsEqual (Set fa) (Set fb) = do
+    result <- liftIO $ withForeignPtr fa $ \pa ->
+        withForeignPtr fb $ \pb -> c_set_is_equal pa pb
+    case result of
+        -1 -> throwISL "isl_set_is_equal"
+        0  -> pure False
+        _  -> pure True
+
 -- Operators
 infixl 6 \/
 
@@ -161,3 +173,13 @@ unionSetCoalesce (UnionSet fp) = do
             cptr <- c_uset_copy ptr
             c_uset_coalesce cptr
     manage c_uset_free "isl_union_set_coalesce" mk UnionSet
+
+-- | Check if two union sets are equal
+unionSetIsEqual :: UnionSet s -> UnionSet s -> ISL s Bool
+unionSetIsEqual (UnionSet fa) (UnionSet fb) = do
+    result <- liftIO $ withForeignPtr fa $ \pa ->
+        withForeignPtr fb $ \pb -> c_uset_is_equal pa pb
+    case result of
+        -1 -> throwISL "isl_union_set_is_equal"
+        0  -> pure False
+        _  -> pure True

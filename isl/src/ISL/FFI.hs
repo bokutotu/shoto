@@ -41,6 +41,7 @@ module ISL.FFI (
     c_set_intersect,
     c_set_subtract,
     c_set_coalesce,
+    c_set_is_equal,
 
     -- * Union Set FFI
     c_uset_read,
@@ -51,6 +52,7 @@ module ISL.FFI (
     c_uset_intersect,
     c_uset_subtract,
     c_uset_coalesce,
+    c_uset_is_equal,
 
     -- * Schedule FFI
     c_sched_read,
@@ -59,6 +61,7 @@ module ISL.FFI (
     c_sched_copy,
     c_sched_from_domain,
     c_sched_get_domain,
+    c_sched_plain_is_equal,
 
     -- * ID FFI
     c_id_free,
@@ -252,6 +255,9 @@ foreign import ccall "isl/set.h isl_set_subtract"
 foreign import ccall "isl/set.h isl_set_coalesce"
     c_set_coalesce :: RawSet -> IO RawSet
 
+foreign import ccall "isl/set.h isl_set_is_equal"
+    c_set_is_equal :: RawSet -> RawSet -> IO CInt
+
 -- Union Set
 foreign import ccall "isl/union_set.h isl_union_set_read_from_str"
     c_uset_read :: RawCtx -> CString -> IO RawUnionSet
@@ -277,6 +283,9 @@ foreign import ccall "isl/union_set.h isl_union_set_subtract"
 foreign import ccall "isl/union_set.h isl_union_set_coalesce"
     c_uset_coalesce :: RawUnionSet -> IO RawUnionSet
 
+foreign import ccall "isl/union_set.h isl_union_set_is_equal"
+    c_uset_is_equal :: RawUnionSet -> RawUnionSet -> IO CInt
+
 -- Schedule
 foreign import ccall "isl/schedule.h isl_schedule_read_from_str"
     c_sched_read :: RawCtx -> CString -> IO RawSchedule
@@ -295,6 +304,9 @@ foreign import ccall "isl/schedule.h isl_schedule_from_domain"
 
 foreign import ccall "isl/schedule.h isl_schedule_get_domain"
     c_sched_get_domain :: RawSchedule -> IO RawUnionSet
+
+foreign import ccall "isl/schedule.h isl_schedule_plain_is_equal"
+    c_sched_plain_is_equal :: RawSchedule -> RawSchedule -> IO CInt
 
 -- ID Operations
 foreign import ccall "isl/id.h isl_id_free"
