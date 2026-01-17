@@ -5,6 +5,8 @@ module ISL.FFI (
     IslCtx,
     IslSet,
     IslUnionSet,
+    IslMap,
+    IslUnionMap,
     IslSchedule,
     IslId,
     IslAstBuild,
@@ -16,6 +18,8 @@ module ISL.FFI (
     RawCtx,
     RawSet,
     RawUnionSet,
+    RawMap,
+    RawUnionMap,
     RawSchedule,
     RawId,
     RawAstBuild,
@@ -53,6 +57,38 @@ module ISL.FFI (
     c_uset_subtract,
     c_uset_coalesce,
     c_uset_is_equal,
+
+    -- * Map FFI
+    c_map_read,
+    c_map_to_str,
+    c_map_free,
+    c_map_copy,
+    c_map_union,
+    c_map_intersect,
+    c_map_subtract,
+    c_map_coalesce,
+    c_map_is_equal,
+    c_map_domain,
+    c_map_range,
+    c_map_reverse,
+    c_map_apply_range,
+    c_map_apply_domain,
+
+    -- * Union Map FFI
+    c_umap_read,
+    c_umap_to_str,
+    c_umap_free,
+    c_umap_copy,
+    c_umap_union,
+    c_umap_intersect,
+    c_umap_subtract,
+    c_umap_coalesce,
+    c_umap_is_equal,
+    c_umap_domain,
+    c_umap_range,
+    c_umap_reverse,
+    c_umap_apply_range,
+    c_umap_apply_domain,
 
     -- * Schedule FFI
     c_sched_read,
@@ -176,6 +212,10 @@ data IslSet
 
 data IslUnionSet
 
+data IslMap
+
+data IslUnionMap
+
 data IslSchedule
 
 data IslId
@@ -197,6 +237,10 @@ type RawCtx = Ptr IslCtx
 type RawSet = Ptr IslSet
 
 type RawUnionSet = Ptr IslUnionSet
+
+type RawMap = Ptr IslMap
+
+type RawUnionMap = Ptr IslUnionMap
 
 type RawSchedule = Ptr IslSchedule
 
@@ -285,6 +329,92 @@ foreign import ccall "isl/union_set.h isl_union_set_coalesce"
 
 foreign import ccall "isl/union_set.h isl_union_set_is_equal"
     c_uset_is_equal :: RawUnionSet -> RawUnionSet -> IO CInt
+
+-- Map
+foreign import ccall "isl/map.h isl_map_read_from_str"
+    c_map_read :: RawCtx -> CString -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_to_str"
+    c_map_to_str :: RawMap -> IO CString
+
+foreign import ccall "isl/map.h isl_map_free"
+    c_map_free :: RawMap -> IO ()
+
+foreign import ccall "isl/map.h isl_map_copy"
+    c_map_copy :: RawMap -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_union"
+    c_map_union :: RawMap -> RawMap -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_intersect"
+    c_map_intersect :: RawMap -> RawMap -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_subtract"
+    c_map_subtract :: RawMap -> RawMap -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_coalesce"
+    c_map_coalesce :: RawMap -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_is_equal"
+    c_map_is_equal :: RawMap -> RawMap -> IO CInt
+
+foreign import ccall "isl/map.h isl_map_domain"
+    c_map_domain :: RawMap -> IO RawSet
+
+foreign import ccall "isl/map.h isl_map_range"
+    c_map_range :: RawMap -> IO RawSet
+
+foreign import ccall "isl/map.h isl_map_reverse"
+    c_map_reverse :: RawMap -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_apply_range"
+    c_map_apply_range :: RawMap -> RawMap -> IO RawMap
+
+foreign import ccall "isl/map.h isl_map_apply_domain"
+    c_map_apply_domain :: RawMap -> RawMap -> IO RawMap
+
+-- Union Map
+foreign import ccall "isl/union_map.h isl_union_map_read_from_str"
+    c_umap_read :: RawCtx -> CString -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_to_str"
+    c_umap_to_str :: RawUnionMap -> IO CString
+
+foreign import ccall "isl/union_map.h isl_union_map_free"
+    c_umap_free :: RawUnionMap -> IO ()
+
+foreign import ccall "isl/union_map.h isl_union_map_copy"
+    c_umap_copy :: RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_union"
+    c_umap_union :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_intersect"
+    c_umap_intersect :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_subtract"
+    c_umap_subtract :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_coalesce"
+    c_umap_coalesce :: RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_is_equal"
+    c_umap_is_equal :: RawUnionMap -> RawUnionMap -> IO CInt
+
+foreign import ccall "isl/union_map.h isl_union_map_domain"
+    c_umap_domain :: RawUnionMap -> IO RawUnionSet
+
+foreign import ccall "isl/union_map.h isl_union_map_range"
+    c_umap_range :: RawUnionMap -> IO RawUnionSet
+
+foreign import ccall "isl/union_map.h isl_union_map_reverse"
+    c_umap_reverse :: RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_apply_range"
+    c_umap_apply_range :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_apply_domain"
+    c_umap_apply_domain :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
 
 -- Schedule
 foreign import ccall "isl/schedule.h isl_schedule_read_from_str"

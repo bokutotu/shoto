@@ -22,6 +22,7 @@ library:
     - unix
     - containers
     - mtl
+    - isl
 
 tests:
   shoto-test:

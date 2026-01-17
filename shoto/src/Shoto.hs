@@ -1,1 +1,4 @@
-module Shoto where
+module Shoto (compile) where
+
+compile :: String -> String
+compile islStr = undefined
