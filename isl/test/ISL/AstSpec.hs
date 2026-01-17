@@ -37,7 +37,7 @@ spec = do
                             iter `shouldBe` "c0"
                             case body of
                                 AstUser _ -> pure ()
-                                _         -> expectationFailure $ "Expected AstUser, got: " ++ show body
+                                _ -> expectationFailure $ "Expected AstUser, got: " ++ show body
                         _ -> expectationFailure $ "Expected AstFor, got: " ++ show tree
 
         it "can generate C code from schedule" $ do

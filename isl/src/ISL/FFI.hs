@@ -6,10 +6,7 @@ module ISL.FFI (
     IslSet,
     IslUnionSet,
     IslSchedule,
-    IslScheduleNode,
     IslId,
-    IslUnionMap,
-    IslMultiUnionPwAff,
     IslAstBuild,
     IslAstNode,
     IslAstExpr,
@@ -20,10 +17,7 @@ module ISL.FFI (
     RawSet,
     RawUnionSet,
     RawSchedule,
-    RawScheduleNode,
     RawId,
-    RawUnionMap,
-    RawMultiUnionPwAff,
     RawAstBuild,
     RawAstNode,
     RawAstExpr,
@@ -66,36 +60,9 @@ module ISL.FFI (
     c_sched_from_domain,
     c_sched_get_domain,
 
-    -- * Schedule Node FFI
-    c_sched_get_root,
-    c_sched_node_free,
-    c_sched_node_copy,
-    c_sched_node_get_type,
-    c_sched_node_n_children,
-    c_sched_node_get_child,
-
-    -- * Schedule Node Data Getters
-    c_sched_node_band_get_partial_schedule,
-    c_sched_node_band_get_permutable,
-    c_sched_node_band_n_member,
-    c_sched_node_context_get_context,
-    c_sched_node_domain_get_domain,
-    c_sched_node_filter_get_filter,
-    c_sched_node_guard_get_guard,
-    c_sched_node_mark_get_id,
-    c_sched_node_extension_get_extension,
-
     -- * ID FFI
     c_id_free,
     c_id_get_name,
-
-    -- * Union Map FFI
-    c_umap_to_str,
-    c_umap_free,
-
-    -- * Multi Union Pw Aff FFI
-    c_mupa_to_str,
-    c_mupa_free,
 
     -- * AST Build FFI
     c_ast_build_alloc,
@@ -146,19 +113,6 @@ module ISL.FFI (
     c_printer_print_ast_node,
     c_printer_get_str,
     c_printer_free,
-
-    -- * Schedule Node Type Constants
-    nodeTypeBand,
-    nodeTypeContext,
-    nodeTypeDomain,
-    nodeTypeExpansion,
-    nodeTypeExtension,
-    nodeTypeFilter,
-    nodeTypeGuard,
-    nodeTypeLeaf,
-    nodeTypeMark,
-    nodeTypeSequence,
-    nodeTypeSet,
 
     -- * AST Node Type Constants
     astNodeTypeError,
@@ -221,13 +175,7 @@ data IslUnionSet
 
 data IslSchedule
 
-data IslScheduleNode
-
 data IslId
-
-data IslUnionMap
-
-data IslMultiUnionPwAff
 
 data IslAstBuild
 
@@ -249,13 +197,7 @@ type RawUnionSet = Ptr IslUnionSet
 
 type RawSchedule = Ptr IslSchedule
 
-type RawScheduleNode = Ptr IslScheduleNode
-
 type RawId = Ptr IslId
-
-type RawUnionMap = Ptr IslUnionMap
-
-type RawMultiUnionPwAff = Ptr IslMultiUnionPwAff
 
 type RawAstBuild = Ptr IslAstBuild
 
@@ -268,35 +210,6 @@ type RawAstNodeList = Ptr IslAstNodeList
 type RawVal = Ptr IslVal
 
 type RawPrinter = Ptr IslPrinter
-
--- Schedule Node Type Constants (isl_schedule_node_type enum)
--- From isl/schedule_type.h:
--- isl_schedule_node_error = -1
--- isl_schedule_node_band = 0
--- isl_schedule_node_context = 1
--- isl_schedule_node_domain = 2
--- ...
-nodeTypeBand, nodeTypeContext, nodeTypeDomain, nodeTypeExpansion :: CInt
-nodeTypeExtension, nodeTypeFilter, nodeTypeLeaf, nodeTypeGuard :: CInt
-nodeTypeMark, nodeTypeSequence, nodeTypeSet :: CInt
-nodeTypeBand = 0
-nodeTypeContext = 1
-nodeTypeDomain = 2
-nodeTypeExpansion = 3
-
-nodeTypeExtension = 4
-
-nodeTypeFilter = 5
-
-nodeTypeLeaf = 6
-
-nodeTypeGuard = 7
-
-nodeTypeMark = 8
-
-nodeTypeSequence = 9
-
-nodeTypeSet = 10
 
 -- Context
 foreign import ccall "isl/ctx.h isl_ctx_alloc"
@@ -383,74 +296,12 @@ foreign import ccall "isl/schedule.h isl_schedule_from_domain"
 foreign import ccall "isl/schedule.h isl_schedule_get_domain"
     c_sched_get_domain :: RawSchedule -> IO RawUnionSet
 
--- Schedule Node
-foreign import ccall "isl/schedule.h isl_schedule_get_root"
-    c_sched_get_root :: RawSchedule -> IO RawScheduleNode
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_free"
-    c_sched_node_free :: RawScheduleNode -> IO ()
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_copy"
-    c_sched_node_copy :: RawScheduleNode -> IO RawScheduleNode
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_get_type"
-    c_sched_node_get_type :: RawScheduleNode -> IO CInt
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_n_children"
-    c_sched_node_n_children :: RawScheduleNode -> IO CInt
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_get_child"
-    c_sched_node_get_child :: RawScheduleNode -> CInt -> IO RawScheduleNode
-
--- Schedule Node Band Operations
-foreign import ccall "isl/schedule_node.h isl_schedule_node_band_get_partial_schedule"
-    c_sched_node_band_get_partial_schedule :: RawScheduleNode -> IO RawMultiUnionPwAff
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_band_get_permutable"
-    c_sched_node_band_get_permutable :: RawScheduleNode -> IO CInt
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_band_n_member"
-    c_sched_node_band_n_member :: RawScheduleNode -> IO CInt
-
--- Schedule Node Data Getters
-foreign import ccall "isl/schedule_node.h isl_schedule_node_context_get_context"
-    c_sched_node_context_get_context :: RawScheduleNode -> IO RawSet
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_domain_get_domain"
-    c_sched_node_domain_get_domain :: RawScheduleNode -> IO RawUnionSet
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_filter_get_filter"
-    c_sched_node_filter_get_filter :: RawScheduleNode -> IO RawUnionSet
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_guard_get_guard"
-    c_sched_node_guard_get_guard :: RawScheduleNode -> IO RawSet
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_mark_get_id"
-    c_sched_node_mark_get_id :: RawScheduleNode -> IO RawId
-
-foreign import ccall "isl/schedule_node.h isl_schedule_node_extension_get_extension"
-    c_sched_node_extension_get_extension :: RawScheduleNode -> IO RawUnionMap
-
 -- ID Operations
 foreign import ccall "isl/id.h isl_id_free"
     c_id_free :: RawId -> IO ()
 
 foreign import ccall "isl/id.h isl_id_get_name"
     c_id_get_name :: RawId -> IO CString
-
--- Union Map Operations
-foreign import ccall "isl/union_map.h isl_union_map_to_str"
-    c_umap_to_str :: RawUnionMap -> IO CString
-
-foreign import ccall "isl/union_map.h isl_union_map_free"
-    c_umap_free :: RawUnionMap -> IO ()
-
--- Multi Union Pw Aff Operations
-foreign import ccall "isl/aff.h isl_multi_union_pw_aff_to_str"
-    c_mupa_to_str :: RawMultiUnionPwAff -> IO CString
-
-foreign import ccall "isl/aff.h isl_multi_union_pw_aff_free"
-    c_mupa_free :: RawMultiUnionPwAff -> IO ()
 
 -- AST Build Operations
 foreign import ccall "isl/ast_build.h isl_ast_build_alloc"
@@ -584,8 +435,11 @@ astNodeTypeBlock, astNodeTypeMark, astNodeTypeUser :: CInt
 astNodeTypeError = -1
 astNodeTypeFor = 1
 astNodeTypeIf = 2
+
 astNodeTypeBlock = 3
+
 astNodeTypeMark = 4
+
 astNodeTypeUser = 5
 
 -- AST Expr Type Constants (isl_ast_expr_type enum)
@@ -609,27 +463,49 @@ astOpAnd = 0
 astOpAndThen = 1
 astOpOr = 2
 astOpOrElse = 3
+
 astOpMax = 4
+
 astOpMin = 5
+
 astOpMinus = 6
+
 astOpAdd = 7
+
 astOpSub = 8
+
 astOpMul = 9
+
 astOpDiv = 10
+
 astOpFdivQ = 11
+
 astOpPdivQ = 12
+
 astOpPdivR = 13
+
 astOpZdivR = 14
+
 astOpCond = 15
+
 astOpSelect = 16
+
 astOpEq = 17
+
 astOpLe = 18
+
 astOpLt = 19
+
 astOpGe = 20
+
 astOpGt = 21
+
 astOpCall = 22
+
 astOpAccess = 23
+
 astOpMember = 24
+
 astOpAddressOf = 25
 
 -- Printer Format Constants
