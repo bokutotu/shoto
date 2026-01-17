@@ -12,9 +12,6 @@ module ISL.Core (
     manage,
     throwISL,
     askEnv,
-
-    -- * FFI
-    module ISL.FFI,
 ) where
 
 import           Control.Monad.Except   (ExceptT, MonadError, runExceptT,
@@ -27,7 +24,7 @@ import qualified Foreign.Concurrent     as FC
 import           Foreign.ForeignPtr     (ForeignPtr, newForeignPtr,
                                          touchForeignPtr, withForeignPtr)
 import           Foreign.Ptr            (Ptr, nullPtr)
-import           ISL.FFI
+import           ISL.Internal.FFI
 
 newtype Env = Env (ForeignPtr IslCtx)
 

@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module ISL.FFI (
+module ISL.Internal.FFI (
     -- * Raw Pointer Types
     IslCtx,
     IslSet,
