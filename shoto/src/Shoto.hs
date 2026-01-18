@@ -1,4 +1,10 @@
 module Shoto (compile) where
 
-compile :: String -> String
-compile islStr = undefined
+import           ISL (runISL, unionMap, unionSet)
+
+compile :: String -> String -> String -> String -> String
+compile domain write reed schedule = runISL $ do
+    domain <- unionSet domain
+    write <- unionMap write
+    reed <- unionMap reed
+    schedule <- unionMap schedule

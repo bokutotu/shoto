@@ -16,6 +16,8 @@ module ISL.Internal.FFI (
     IslAstNodeList,
     IslVal,
     IslPrinter,
+    IslUnionAccessInfo,
+    IslUnionFlow,
     RawCtx,
     RawSet,
     RawUnionSet,
@@ -30,6 +32,8 @@ module ISL.Internal.FFI (
     RawAstNodeList,
     RawVal,
     RawPrinter,
+    RawUnionAccessInfo,
+    RawUnionFlow,
 
     -- * Context FFI
     c_ctx_alloc,
@@ -108,6 +112,20 @@ module ISL.Internal.FFI (
     c_sched_constraints_set_coincidence,
     c_sched_constraints_compute_schedule,
     c_sched_constraints_free,
+
+    -- * Union Access Info FFI
+    c_union_access_info_from_sink,
+    c_union_access_info_copy,
+    c_union_access_info_set_must_source,
+    c_union_access_info_set_may_source,
+    c_union_access_info_set_schedule_map,
+    c_union_access_info_compute_flow,
+    c_union_access_info_free,
+
+    -- * Union Flow FFI
+    c_union_flow_get_must_dependence,
+    c_union_flow_get_may_dependence,
+    c_union_flow_free,
 
     -- * ID FFI
     c_id_free,
@@ -244,6 +262,10 @@ data IslVal
 
 data IslPrinter
 
+data IslUnionAccessInfo
+
+data IslUnionFlow
+
 type RawCtx = Ptr IslCtx
 
 type RawSet = Ptr IslSet
@@ -271,6 +293,10 @@ type RawAstNodeList = Ptr IslAstNodeList
 type RawVal = Ptr IslVal
 
 type RawPrinter = Ptr IslPrinter
+
+type RawUnionAccessInfo = Ptr IslUnionAccessInfo
+
+type RawUnionFlow = Ptr IslUnionFlow
 
 -- Context
 foreign import ccall "isl/ctx.h isl_ctx_alloc"
@@ -473,6 +499,41 @@ foreign import ccall "isl/schedule.h isl_schedule_constraints_compute_schedule"
 
 foreign import ccall "isl/schedule.h isl_schedule_constraints_free"
     c_sched_constraints_free :: RawScheduleConstraints -> IO ()
+
+-- Union Access Info Operations
+foreign import ccall "isl/flow.h isl_union_access_info_from_sink"
+    c_union_access_info_from_sink :: RawUnionMap -> IO RawUnionAccessInfo
+
+foreign import ccall "isl/flow.h isl_union_access_info_copy"
+    c_union_access_info_copy :: RawUnionAccessInfo -> IO RawUnionAccessInfo
+
+foreign import ccall "isl/flow.h isl_union_access_info_set_must_source"
+    c_union_access_info_set_must_source ::
+        RawUnionAccessInfo -> RawUnionMap -> IO RawUnionAccessInfo
+
+foreign import ccall "isl/flow.h isl_union_access_info_set_may_source"
+    c_union_access_info_set_may_source ::
+        RawUnionAccessInfo -> RawUnionMap -> IO RawUnionAccessInfo
+
+foreign import ccall "isl/flow.h isl_union_access_info_set_schedule_map"
+    c_union_access_info_set_schedule_map ::
+        RawUnionAccessInfo -> RawUnionMap -> IO RawUnionAccessInfo
+
+foreign import ccall "isl/flow.h isl_union_access_info_compute_flow"
+    c_union_access_info_compute_flow :: RawUnionAccessInfo -> IO RawUnionFlow
+
+foreign import ccall "isl/flow.h isl_union_access_info_free"
+    c_union_access_info_free :: RawUnionAccessInfo -> IO ()
+
+-- Union Flow Operations
+foreign import ccall "isl/flow.h isl_union_flow_get_must_dependence"
+    c_union_flow_get_must_dependence :: RawUnionFlow -> IO RawUnionMap
+
+foreign import ccall "isl/flow.h isl_union_flow_get_may_dependence"
+    c_union_flow_get_may_dependence :: RawUnionFlow -> IO RawUnionMap
+
+foreign import ccall "isl/flow.h isl_union_flow_free"
+    c_union_flow_free :: RawUnionFlow -> IO ()
 
 -- ID Operations
 foreign import ccall "isl/id.h isl_id_free"

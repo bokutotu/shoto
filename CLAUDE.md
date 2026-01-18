@@ -31,3 +31,20 @@ Integer Set Library (ISL) のHaskellバインディング。多面体解析の�
 ```bash
 cabal test all
 ```
+
+## lint
+
+```bash
+hlint .
+```
+
+自動で修正を試みる
+```bash
+./hlint-refactor.sh
+```
+
+## フォーマット
+
+```bash
+./format.sh
+```
