@@ -8,6 +8,7 @@ module ISL.Internal.FFI (
     IslMap,
     IslUnionMap,
     IslSchedule,
+    IslScheduleConstraints,
     IslId,
     IslAstBuild,
     IslAstNode,
@@ -21,6 +22,7 @@ module ISL.Internal.FFI (
     RawMap,
     RawUnionMap,
     RawSchedule,
+    RawScheduleConstraints,
     RawId,
     RawAstBuild,
     RawAstNode,
@@ -98,6 +100,14 @@ module ISL.Internal.FFI (
     c_sched_from_domain,
     c_sched_get_domain,
     c_sched_plain_is_equal,
+
+    -- * Schedule Constraints FFI
+    c_sched_constraints_on_domain,
+    c_sched_constraints_set_validity,
+    c_sched_constraints_set_proximity,
+    c_sched_constraints_set_coincidence,
+    c_sched_constraints_compute_schedule,
+    c_sched_constraints_free,
 
     -- * ID FFI
     c_id_free,
@@ -218,6 +228,8 @@ data IslUnionMap
 
 data IslSchedule
 
+data IslScheduleConstraints
+
 data IslId
 
 data IslAstBuild
@@ -243,6 +255,8 @@ type RawMap = Ptr IslMap
 type RawUnionMap = Ptr IslUnionMap
 
 type RawSchedule = Ptr IslSchedule
+
+type RawScheduleConstraints = Ptr IslScheduleConstraints
 
 type RawId = Ptr IslId
 
@@ -437,6 +451,28 @@ foreign import ccall "isl/schedule.h isl_schedule_get_domain"
 
 foreign import ccall "isl/schedule.h isl_schedule_plain_is_equal"
     c_sched_plain_is_equal :: RawSchedule -> RawSchedule -> IO CInt
+
+-- Schedule Constraints Operations
+foreign import ccall "isl/schedule.h isl_schedule_constraints_on_domain"
+    c_sched_constraints_on_domain :: RawUnionSet -> IO RawScheduleConstraints
+
+foreign import ccall "isl/schedule.h isl_schedule_constraints_set_validity"
+    c_sched_constraints_set_validity ::
+        RawScheduleConstraints -> RawUnionMap -> IO RawScheduleConstraints
+
+foreign import ccall "isl/schedule.h isl_schedule_constraints_set_proximity"
+    c_sched_constraints_set_proximity ::
+        RawScheduleConstraints -> RawUnionMap -> IO RawScheduleConstraints
+
+foreign import ccall "isl/schedule.h isl_schedule_constraints_set_coincidence"
+    c_sched_constraints_set_coincidence ::
+        RawScheduleConstraints -> RawUnionMap -> IO RawScheduleConstraints
+
+foreign import ccall "isl/schedule.h isl_schedule_constraints_compute_schedule"
+    c_sched_constraints_compute_schedule :: RawScheduleConstraints -> IO RawSchedule
+
+foreign import ccall "isl/schedule.h isl_schedule_constraints_free"
+    c_sched_constraints_free :: RawScheduleConstraints -> IO ()
 
 -- ID Operations
 foreign import ccall "isl/id.h isl_id_free"
