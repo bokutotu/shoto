@@ -95,6 +95,7 @@ module ISL.Internal.FFI (
     c_umap_reverse,
     c_umap_apply_range,
     c_umap_apply_domain,
+    c_umap_intersect_domain,
 
     -- * Schedule FFI
     c_sched_read,
@@ -455,6 +456,9 @@ foreign import ccall "isl/union_map.h isl_union_map_apply_range"
 
 foreign import ccall "isl/union_map.h isl_union_map_apply_domain"
     c_umap_apply_domain :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_intersect_domain"
+    c_umap_intersect_domain :: RawUnionMap -> RawUnionSet -> IO RawUnionMap
 
 -- Schedule
 foreign import ccall "isl/schedule.h isl_schedule_read_from_str"

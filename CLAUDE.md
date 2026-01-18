@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Shotoとは
 
-Shotoは多面体コンパイラ（polyhedral compiler）である。テンソル計算を記述し、GPUカーネルコードを生成することを目的とする。
+Shotoは多面体コンパイラ（polyhedral compiler）である。テンソル計算を記述し、GPUカーネル/SIMDコードを生成することを目的とする。
+今は、C言語をシンプルに出力している
 
 ## パッケージ構成
 

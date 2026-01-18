@@ -22,6 +22,7 @@ module ISL.Map (
     unionMapToString,
     unionMapUnion,
     unionMapIntersect,
+    unionMapIntersectDomain,
     unionMapSubtract,
     unionMapCoalesce,
     unionMapIsEqual,

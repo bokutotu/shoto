@@ -111,3 +111,23 @@ spec = do
                 r <- unionMapReverse m
                 unionMapToString r
             result `shouldBe` Right "{ B[j] -> A[i = j] : 0 <= j <= 9 }"
+
+        it "can intersect union map domain with union set" $ do
+            result <- runISL $ do
+                m <- unionMap "{ S[i] -> A[i] }"
+                d <- unionSet "{ S[i] : 0 <= i <= 9 }"
+                r <- unionMapIntersectDomain m d
+                unionMapToString r
+            result `shouldBe` Right "{ S[i] -> A[i] : 0 <= i <= 9 }"
+
+        it "can intersect union map domain with multiple statements" $ do
+            result <- runISL $ do
+                m <- unionMap "{ S[i] -> A[i]; T[i] -> B[i] }"
+                d <- unionSet "{ S[i] : 0 <= i <= 4; T[i] : 5 <= i <= 9 }"
+                r <- unionMapIntersectDomain m d
+                unionMapToString r
+            case result of
+                Right s -> do
+                    s `shouldContain` "S[i] -> A[i]"
+                    s `shouldContain` "T[i] -> B[i]"
+                Left e -> expectationFailure $ show e

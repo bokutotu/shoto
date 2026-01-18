@@ -22,6 +22,7 @@ module ISL.Internal.Map.Ops (
     unionMapToString,
     unionMapUnion,
     unionMapIntersect,
+    unionMapIntersectDomain,
     unionMapSubtract,
     unionMapCoalesce,
     unionMapIsEqual,
@@ -182,6 +183,16 @@ unionMapUnion = liftOp2UM c_umap_union "isl_union_map_union"
 
 unionMapIntersect :: UnionMap s -> UnionMap s -> ISL s (UnionMap s)
 unionMapIntersect = liftOp2UM c_umap_intersect "isl_union_map_intersect"
+
+-- | Intersect the domain of a union map with a union set
+unionMapIntersectDomain :: UnionMap s -> UnionSet s -> ISL s (UnionMap s)
+unionMapIntersectDomain (UnionMap umFP) (UnionSet usFP) = do
+    let mk = withForeignPtr umFP $ \umPtr ->
+            withForeignPtr usFP $ \usPtr -> do
+                umCopy <- c_umap_copy umPtr
+                usCopy <- c_uset_copy usPtr
+                c_umap_intersect_domain umCopy usCopy
+    manage c_umap_free "isl_union_map_intersect_domain" mk UnionMap
 
 unionMapSubtract :: UnionMap s -> UnionMap s -> ISL s (UnionMap s)
 unionMapSubtract = liftOp2UM c_umap_subtract "isl_union_map_subtract"
