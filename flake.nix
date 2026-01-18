@@ -62,6 +62,7 @@
             fourmolu               = {};
             hspec-discover         = {};
             hpack                  = {};
+            apply-refact           = {};
           };
           buildInputs = [
             pkgs.git

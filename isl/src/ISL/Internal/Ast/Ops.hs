@@ -290,10 +290,9 @@ manageNode mk = do
     if ptr == nullPtr
         then throwISL "ast_node"
         else liftIO $ do
-            fp <- FC.newForeignPtr ptr $ do
+            FC.newForeignPtr ptr $ do
                 c_ast_node_free ptr
                 touchForeignPtr ctxFP
-            pure fp
 
 manageExpr :: IO RawAstExpr -> ISL s (ForeignPtr IslAstExpr)
 manageExpr mk = do
@@ -302,10 +301,9 @@ manageExpr mk = do
     if ptr == nullPtr
         then throwISL "ast_expr"
         else liftIO $ do
-            fp <- FC.newForeignPtr ptr $ do
+            FC.newForeignPtr ptr $ do
                 c_ast_expr_free ptr
                 touchForeignPtr ctxFP
-            pure fp
 
 manageNodeList :: IO RawAstNodeList -> ISL s (ForeignPtr IslAstNodeList)
 manageNodeList mk = do
@@ -314,7 +312,6 @@ manageNodeList mk = do
     if ptr == nullPtr
         then throwISL "ast_node_list"
         else liftIO $ do
-            fp <- FC.newForeignPtr ptr $ do
+            FC.newForeignPtr ptr $ do
                 c_ast_node_list_free ptr
                 touchForeignPtr ctxFP
-            pure fp
