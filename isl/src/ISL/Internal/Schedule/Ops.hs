@@ -60,5 +60,5 @@ scheduleIsEqual (Schedule fa) (Schedule fb) = do
         withForeignPtr fb $ \pb -> c_sched_plain_is_equal pa pb
     case result of
         -1 -> throwISL "isl_schedule_plain_is_equal"
-        0  -> pure False
-        _  -> pure True
+        0 -> pure False
+        _ -> pure True

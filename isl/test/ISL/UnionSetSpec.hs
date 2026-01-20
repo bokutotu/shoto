@@ -12,7 +12,7 @@ spec = do
                 expected <- unionSet "{ A[i] : 0 <= i <= 9; B[j] : 0 <= j <= 4 }"
                 unionSetIsEqual uset expected
             case result of
-                Left err      -> expectationFailure $ show err
+                Left err -> expectationFailure $ show err
                 Right isEqual -> isEqual `shouldBe` True
 
         it "can compute union set union" $ do
@@ -23,5 +23,5 @@ spec = do
                 expected <- unionSet "{ A[i] : 0 <= i <= 4; B[j] : 0 <= j <= 2 }"
                 unionSetIsEqual combined expected
             case result of
-                Left err      -> expectationFailure $ show err
+                Left err -> expectationFailure $ show err
                 Right isEqual -> isEqual `shouldBe` True

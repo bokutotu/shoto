@@ -17,14 +17,51 @@
     haskellNix.url  = "github:input-output-hk/haskell.nix";
     nixpkgs.follows = "haskellNix/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    isl = {
+      url = "git+https://repo.or.cz/isl.git?ref=refs/tags/isl-0.27";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, haskellNix }:
+  outputs = { self, nixpkgs, flake-utils, haskellNix, isl }:
     flake-utils.lib.eachDefaultSystem (system:
       let
+        islOverlay = final: prev:
+          let
+            islGit = prev.stdenv.mkDerivation {
+              pname = "isl";
+              version = "0.27";
+              src = isl;
+              nativeBuildInputs = [
+                prev.autoconf
+                prev.automake
+                prev.libtool
+                prev.gnum4
+                prev.pkg-config
+              ];
+              buildInputs = [
+                prev.gmp
+              ];
+              preConfigure = ''
+                ./autogen.sh
+              '';
+              configureFlags = [
+                "--with-gmp-prefix=${prev.gmp}"
+              ];
+              enableParallelBuilding = true;
+            };
+          in {
+            islGit = islGit;
+            haskell-nix = prev.haskell-nix // {
+              extraPkgconfigMappings = prev.haskell-nix.extraPkgconfigMappings or {} // {
+                "isl" = [ "islGit" ];
+              };
+            };
+          };
+
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ haskellNix.overlay ];
+          overlays = [ haskellNix.overlay islOverlay ];
           inherit (haskellNix) config;
         };
         
@@ -67,6 +104,8 @@
           buildInputs = [
             pkgs.git
             pkgs.lefthook
+            pkgs.pkg-config
+            pkgs.islGit
             gccForCuda
           ];
           shellHook = ''
@@ -93,6 +132,9 @@
             if [ -d "/usr/lib/x86_64-linux-gnu" ]; then
               export LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH"
             fi
+
+            # Prefer isl 0.27 from nix in this shell
+            export PKG_CONFIG_PATH="${pkgs.islGit}/lib/pkgconfig:$PKG_CONFIG_PATH"
           '';
         };
       });

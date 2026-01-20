@@ -93,4 +93,4 @@ spec = do
 
 isRight :: Either a b -> Bool
 isRight (Right _) = True
-isRight _         = False
+isRight _ = False

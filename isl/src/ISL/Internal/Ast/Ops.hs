@@ -91,12 +91,12 @@ walkNode :: ForeignPtr IslAstNode -> ISL s AstTree
 walkNode nodeFP = do
     t <- liftIO $ withForeignPtr nodeFP c_ast_node_get_type
     if
-        | t == astNodeTypeFor   -> walkForNode nodeFP
-        | t == astNodeTypeIf    -> walkIfNode nodeFP
+        | t == astNodeTypeFor -> walkForNode nodeFP
+        | t == astNodeTypeIf -> walkIfNode nodeFP
         | t == astNodeTypeBlock -> walkBlockNode nodeFP
-        | t == astNodeTypeUser  -> walkUserNode nodeFP
-        | t == astNodeTypeMark  -> walkMarkNode nodeFP
-        | otherwise             -> pure AstError
+        | t == astNodeTypeUser -> walkUserNode nodeFP
+        | t == astNodeTypeMark -> walkMarkNode nodeFP
+        | otherwise -> pure AstError
 
 walkForNode :: ForeignPtr IslAstNode -> ISL s AstTree
 walkForNode nodeFP = do
@@ -109,7 +109,7 @@ walkForNode nodeFP = do
 
     iterName <- case iterExpr of
         ExprId name -> pure name
-        _           -> pure "<unknown>"
+        _ -> pure "<unknown>"
 
     pure $
         AstFor
@@ -212,10 +212,10 @@ walkExpr :: ForeignPtr IslAstExpr -> ISL s AstExpression
 walkExpr exprFP = do
     t <- liftIO $ withForeignPtr exprFP c_ast_expr_get_type
     if
-        | t == astExprTypeId  -> walkIdExpr exprFP
+        | t == astExprTypeId -> walkIdExpr exprFP
         | t == astExprTypeInt -> walkIntExpr exprFP
-        | t == astExprTypeOp  -> walkOpExpr exprFP
-        | otherwise           -> pure ExprError
+        | t == astExprTypeOp -> walkOpExpr exprFP
+        | otherwise -> pure ExprError
 
 walkIdExpr :: ForeignPtr IslAstExpr -> ISL s AstExpression
 walkIdExpr exprFP = liftIO $ withForeignPtr exprFP $ \p -> do
