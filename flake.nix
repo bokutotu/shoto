@@ -64,9 +64,9 @@
           overlays = [ haskellNix.overlay islOverlay ];
           inherit (haskellNix) config;
         };
+
+        isLinux = pkgs.stdenv.isLinux;
         
-        # GCC 13を使用
-        gccForCuda = pkgs.gcc13;
 
         # hpackでcabalファイルを生成したソースを作成
         src = pkgs.runCommand "shoto-src" {
@@ -88,54 +88,76 @@
             packages.shoto.components.tests.shoto-test.libs = pkgs.lib.mkForce [];
           }];
         };
-      in {
-        devShells.default = project.shellFor {
-          tools = {
-            haskell-language-server = {};
-            cabal                  = {};
-            hlint                  = {};
-            stylish-haskell        = {};
-            fast-tags              = {};
-            fourmolu               = {};
-            hspec-discover         = {};
-            hpack                  = {};
-            apply-refact           = {};
+
+        shellTools = {
+          haskell-language-server = {};
+          cabal                  = {};
+          hlint                  = {};
+          stylish-haskell        = {};
+          fast-tags              = {};
+          fourmolu               = {};
+          hspec-discover         = {};
+          hpack                  = {};
+          apply-refact           = {};
+        };
+
+        baseBuildInputs = [
+          pkgs.git
+          pkgs.lefthook
+          pkgs.pkg-config
+          pkgs.islGit
+        ];
+
+        mkShell = { withCuda ? false }:
+          project.shellFor {
+            tools = shellTools;
+            buildInputs = baseBuildInputs
+              ++ pkgs.lib.optionals withCuda [ pkgs.cudaPackages.cudatoolkit ];
+            shellHook = ''
+              # lefthookをインストール
+              lefthook install
+
+              ${pkgs.lib.optionalString withCuda ''
+                # NixのCUDAを優先
+                export CUDA_PATH="${pkgs.cudaPackages.cudatoolkit}"
+                export LD_LIBRARY_PATH="${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.cudaPackages.cudatoolkit}/lib64:$LD_LIBRARY_PATH"
+                export LIBRARY_PATH="${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.cudaPackages.cudatoolkit}/lib64:$LIBRARY_PATH"
+                export C_INCLUDE_PATH="${pkgs.cudaPackages.cudatoolkit}/include:$C_INCLUDE_PATH"
+              ''}
+              
+              # システムのCUDAを使う
+              if [ -n "$CUDA_PATH" ]; then
+                export LD_LIBRARY_PATH="$CUDA_PATH/lib64:$LD_LIBRARY_PATH"
+                export LIBRARY_PATH="$CUDA_PATH/lib64:$LIBRARY_PATH"
+                export C_INCLUDE_PATH="$CUDA_PATH/include:$C_INCLUDE_PATH"
+              elif [ -d "/usr/local/cuda" ]; then
+                export LD_LIBRARY_PATH="/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
+                export LIBRARY_PATH="/usr/local/cuda/lib64:$LIBRARY_PATH"
+                export C_INCLUDE_PATH="/usr/local/cuda/include:$C_INCLUDE_PATH"
+              fi
+              
+              # WSL環境用の追加パス
+              if [ -d "/usr/lib/x86_64-linux-gnu" ]; then
+                export LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH"
+              fi
+
+              # Prefer isl 0.27 from nix in this shell
+              export PKG_CONFIG_PATH="${pkgs.islGit}/lib/pkgconfig:$PKG_CONFIG_PATH"
+            '';
           };
-          buildInputs = [
-            pkgs.git
-            pkgs.lefthook
-            pkgs.pkg-config
-            pkgs.islGit
-            gccForCuda
-          ];
-          shellHook = ''
-            # lefthookをインストール
-            lefthook install
+      in {
+        devShells = {
+          default = mkShell {};
+        } // pkgs.lib.optionalAttrs isLinux {
+          cuda = mkShell { withCuda = true; };
+        };
 
-            # GCC 13を優先
-            export PATH="${gccForCuda}/bin:$PATH"
-            export CC="${gccForCuda}/bin/gcc"
-            export CXX="${gccForCuda}/bin/g++"
-            
-            # システムのCUDAを使う
-            if [ -n "$CUDA_PATH" ]; then
-              export LD_LIBRARY_PATH="$CUDA_PATH/lib64:$LD_LIBRARY_PATH"
-              export LIBRARY_PATH="$CUDA_PATH/lib64:$LIBRARY_PATH"
-              export C_INCLUDE_PATH="$CUDA_PATH/include:$C_INCLUDE_PATH"
-            elif [ -d "/usr/local/cuda" ]; then
-              export LD_LIBRARY_PATH="/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
-              export LIBRARY_PATH="/usr/local/cuda/lib64:$LIBRARY_PATH"
-              export C_INCLUDE_PATH="/usr/local/cuda/include:$C_INCLUDE_PATH"
-            fi
-            
-            # WSL環境用の追加パス
-            if [ -d "/usr/lib/x86_64-linux-gnu" ]; then
-              export LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH"
-            fi
-
-            # Prefer isl 0.27 from nix in this shell
-            export PKG_CONFIG_PATH="${pkgs.islGit}/lib/pkgconfig:$PKG_CONFIG_PATH"
-          '';
+        packages = {
+          default = project.hsPkgs.shoto.components.library;
+        } // pkgs.lib.optionalAttrs isLinux {
+          cuda = project.hsPkgs.shoto.components.library.overrideAttrs (old: {
+            buildInputs = (old.buildInputs or []) ++ [ pkgs.cudaPackages.cudatoolkit ];
+          });
         };
       });
 }
