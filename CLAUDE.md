@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Shotoとは
 
 Shotoは多面体コンパイラ（polyhedral compiler）である。テンソル計算を記述し、GPUカーネル/SIMDコードを生成することを目的とする。

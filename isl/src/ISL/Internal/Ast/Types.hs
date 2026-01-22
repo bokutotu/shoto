@@ -65,10 +65,10 @@ data AstExpression
 data AstTree
     = AstFor
         { forIterator :: String
-        , forInit :: AstExpression
-        , forCond :: AstExpression
-        , forInc :: AstExpression
-        , forBody :: AstTree
+        , forInit     :: AstExpression
+        , forCond     :: AstExpression
+        , forInc      :: AstExpression
+        , forBody     :: AstTree
         }
     | AstIf
         { ifCond :: AstExpression

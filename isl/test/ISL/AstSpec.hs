@@ -1,7 +1,6 @@
 module ISL.AstSpec (spec) where
 
 import           ISL
-import           ISL.Ast
 import           Test.Hspec
 
 spec :: Spec

@@ -1,13 +1,29 @@
 module Shoto (compile) where
 
-import           ISL (IslError, runISL, unionAccessInfoComputeFlow,
-                      unionAccessInfoFromSink, unionAccessInfoSetMustSource,
-                      unionAccessInfoSetScheduleMap, unionFlowGetMustDependence,
-                      unionMap, unionMapIntersectDomain, unionMapToString,
-                      unionSet)
+import           Data.List (intercalate)
+import           ISL       (AstTree, ISL, IslError, UnionMap,
+                            astBuildFromContext, astBuildNodeFromSchedule,
+                            astNodeToTree, runISL,
+                            scheduleConstraintsComputeSchedule,
+                            scheduleConstraintsOnDomain,
+                            scheduleConstraintsSetProximity,
+                            scheduleConstraintsSetValidity, set,
+                            unionAccessInfoComputeFlow, unionAccessInfoFromSink,
+                            unionAccessInfoSetMustSource,
+                            unionAccessInfoSetScheduleMap,
+                            unionFlowGetMustDependence, unionMap,
+                            unionMapIntersectDomain, unionMapUnion, unionSet)
 
-compile :: String -> String -> String -> String -> IO (Either IslError String)
-compile domainStr writeStr reedStr scheduleStr = runISL $ do
+computeDeps :: UnionMap s -> UnionMap s -> UnionMap s -> ISL s (UnionMap s)
+computeDeps source sink schedule = do
+    accessInfo <- unionAccessInfoFromSink sink
+    accessInfo' <- unionAccessInfoSetMustSource accessInfo source
+    accessInfo'' <- unionAccessInfoSetScheduleMap accessInfo' schedule
+    flow <- unionAccessInfoComputeFlow accessInfo''
+    unionFlowGetMustDependence flow
+
+compile :: String -> String -> String -> String -> [String] -> IO (Either IslError AstTree)
+compile domainStr writeStr reedStr scheduleStr params = runISL $ do
     domain <- unionSet domainStr
     write <- unionMap writeStr
     reed <- unionMap reedStr
@@ -19,10 +35,20 @@ compile domainStr writeStr reedStr scheduleStr = runISL $ do
     schedule' <- unionMapIntersectDomain schedule domain
 
     -- Compute dependence
-    accessInfo <- unionAccessInfoFromSink reed'
-    accessInfo' <- unionAccessInfoSetMustSource accessInfo write'
-    accessInfo'' <- unionAccessInfoSetScheduleMap accessInfo' schedule'
-    flow <- unionAccessInfoComputeFlow accessInfo''
-    dep <- unionFlowGetMustDependence flow
+    rawDep <- computeDeps write' reed' schedule'
+    wawDep <- computeDeps write' write' schedule'
+    warDep <- computeDeps reed' write' schedule'
 
-    unionMapToString dep
+    dep <- unionMapUnion rawDep wawDep
+    dep' <- unionMapUnion dep warDep
+
+    sc <- scheduleConstraintsOnDomain domain
+    sc' <- scheduleConstraintsSetValidity sc dep'
+    sc'' <- scheduleConstraintsSetProximity sc' wawDep
+
+    newSchedule <- scheduleConstraintsComputeSchedule sc''
+
+    paramSet <- set $ "[" ++ intercalate "," params ++ "]" ++ "-> { : }"
+    build <- astBuildFromContext paramSet
+    ast <- astBuildNodeFromSchedule build newSchedule
+    astNodeToTree ast

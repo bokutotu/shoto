@@ -108,8 +108,8 @@ mapIsEqual (Map fa) (Map fb) = do
         withForeignPtr fb $ \pb -> c_map_is_equal pa pb
     case result of
         -1 -> throwISL "isl_map_is_equal"
-        0 -> pure False
-        _ -> pure True
+        0  -> pure False
+        _  -> pure True
 
 -- | Get the domain of a map
 mapDomain :: Map s -> ISL s (Set s)
@@ -211,8 +211,8 @@ unionMapIsEqual (UnionMap fa) (UnionMap fb) = do
         withForeignPtr fb $ \pb -> c_umap_is_equal pa pb
     case result of
         -1 -> throwISL "isl_union_map_is_equal"
-        0 -> pure False
-        _ -> pure True
+        0  -> pure False
+        _  -> pure True
 
 -- | Get the domain of a union map
 unionMapDomain :: UnionMap s -> ISL s (UnionSet s)

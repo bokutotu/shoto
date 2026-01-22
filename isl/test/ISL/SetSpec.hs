@@ -16,7 +16,7 @@ spec = do
             result <- runISL $ do
                 s1 <- set "{ [i] : 0 <= i < 5 }"
                 s2 <- set "{ [i] : 5 <= i < 10 }"
-                u <- s1 \/ s2
+                u <- setUnion s1 s2
                 setToString u
             result `shouldBe` Right "{ [i] : 0 <= i <= 9 and (i <= 4 or i >= 5) }"
 
@@ -24,7 +24,7 @@ spec = do
             result <- runISL $ do
                 s1 <- set "{ [i] : 0 <= i < 10 }"
                 s2 <- set "{ [i] : 5 <= i < 15 }"
-                i <- s1 /\ s2
+                i <- setIntersect s1 s2
                 setToString i
             result `shouldBe` Right "{ [i] : 5 <= i <= 9 }"
 
@@ -32,7 +32,7 @@ spec = do
             result <- runISL $ do
                 s1 <- set "{ [i] : 0 <= i < 10 }"
                 s2 <- set "{ [i] : 5 <= i < 10 }"
-                d <- s1 \\ s2
+                d <- setSubtract s1 s2
                 setToString d
             result `shouldBe` Right "{ [i] : 0 <= i <= 4 }"
 
@@ -40,7 +40,7 @@ spec = do
             result <- runISL $ do
                 s1 <- set "{ [i] : 0 <= i < 5 }"
                 s2 <- set "{ [i] : 5 <= i < 10 }"
-                u <- s1 \/ s2
+                u <- setUnion s1 s2
                 c <- setCoalesce u
                 setToString c
             result `shouldBe` Right "{ [i] : 0 <= i <= 9 }"

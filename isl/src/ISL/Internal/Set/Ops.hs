@@ -7,11 +7,8 @@ module ISL.Internal.Set.Ops (
     set,
     setToString,
     setUnion,
-    (\/),
     setIntersect,
-    (/\),
     setSubtract,
-    (\\),
     setCoalesce,
     setIsEqual,
 
@@ -99,24 +96,8 @@ setIsEqual (Set fa) (Set fb) = do
         withForeignPtr fb $ \pb -> c_set_is_equal pa pb
     case result of
         -1 -> throwISL "isl_set_is_equal"
-        0 -> pure False
-        _ -> pure True
-
--- Operators
-infixl 6 \/
-
-infixl 7 /\
-
-infixl 6 \\
-
-(\/) :: Set s -> Set s -> ISL s (Set s)
-(\/) = setUnion
-
-(/\) :: Set s -> Set s -> ISL s (Set s)
-(/\) = setIntersect
-
-(\\) :: Set s -> Set s -> ISL s (Set s)
-(\\) = setSubtract
+        0  -> pure False
+        _  -> pure True
 
 -- =========================================================
 -- UnionSet Implementation
@@ -176,5 +157,5 @@ unionSetIsEqual (UnionSet fa) (UnionSet fb) = do
         withForeignPtr fb $ \pb -> c_uset_is_equal pa pb
     case result of
         -1 -> throwISL "isl_union_set_is_equal"
-        0 -> pure False
-        _ -> pure True
+        0  -> pure False
+        _  -> pure True

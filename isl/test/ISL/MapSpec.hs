@@ -89,7 +89,7 @@ spec = do
                 unionMapToString u
             case result of
                 Right s -> s `shouldContain` "A[i] -> B[j = i]"
-                Left e -> expectationFailure $ show e
+                Left e  -> expectationFailure $ show e
 
         it "can get union map domain" $ do
             result <- runISL $ do

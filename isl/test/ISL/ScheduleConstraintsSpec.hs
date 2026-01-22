@@ -1,7 +1,6 @@
 module ISL.ScheduleConstraintsSpec (spec) where
 
 import           ISL
-import           ISL.Ast
 import           Test.Hspec
 
 spec :: Spec
@@ -93,4 +92,4 @@ spec = do
 
 isRight :: Either a b -> Bool
 isRight (Right _) = True
-isRight _ = False
+isRight _         = False

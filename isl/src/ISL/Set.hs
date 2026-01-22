@@ -7,11 +7,8 @@ module ISL.Set (
     set,
     setToString,
     setUnion,
-    (\/),
     setIntersect,
-    (/\),
     setSubtract,
-    (\\),
     setCoalesce,
     setIsEqual,
 

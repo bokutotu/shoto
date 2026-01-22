@@ -10,8 +10,10 @@ module ISL (
     module ISL.Schedule,
     module ISL.ScheduleConstraints,
     module ISL.Flow,
+    module ISL.Ast,
 ) where
 
+import           ISL.Ast
 import           ISL.Core                (ISL, IslError (..), runISL)
 import           ISL.Flow
 import           ISL.Map

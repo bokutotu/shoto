@@ -36,9 +36,9 @@ newtype ISL s a = ISL {unISL :: ExceptT IslError (ReaderT Env IO) a}
 
 data IslError = IslError
     { islFunction :: String
-    , islMessage :: Maybe String
-    , islFile :: Maybe String
-    , islLine :: Maybe Int
+    , islMessage  :: Maybe String
+    , islFile     :: Maybe String
+    , islLine     :: Maybe Int
     }
     deriving (Show, Eq)
 
