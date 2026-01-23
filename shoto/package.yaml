@@ -32,6 +32,7 @@ tests:
       - hspec-discover
     dependencies:
       - shoto
+      - isl
       - hspec
       - process
       - bytestring

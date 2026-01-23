@@ -2,6 +2,7 @@ module ISL (
     -- * Core
     ISL,
     runISL,
+    throwISL,
     IslError (..),
 
     -- * Modules
@@ -14,7 +15,7 @@ module ISL (
 ) where
 
 import           ISL.Ast
-import           ISL.Core                (ISL, IslError (..), runISL)
+import           ISL.Core                (ISL, IslError (..), runISL, throwISL)
 import           ISL.Flow
 import           ISL.Map
 import           ISL.Schedule

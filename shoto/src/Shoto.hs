@@ -1,18 +1,22 @@
 module Shoto (compile) where
 
-import           Data.List (intercalate)
-import           ISL       (AstTree, ISL, IslError, UnionMap,
-                            astBuildFromContext, astBuildNodeFromSchedule,
-                            astNodeToTree, runISL,
-                            scheduleConstraintsComputeSchedule,
-                            scheduleConstraintsOnDomain,
-                            scheduleConstraintsSetProximity,
-                            scheduleConstraintsSetValidity, set,
-                            unionAccessInfoComputeFlow, unionAccessInfoFromSink,
-                            unionAccessInfoSetMustSource,
-                            unionAccessInfoSetScheduleMap,
-                            unionFlowGetMustDependence, unionMap,
-                            unionMapIntersectDomain, unionMapUnion, unionSet)
+import           Control.Monad (unless)
+import           Data.List     (intercalate)
+import           ISL           (AstTree, ISL, IslError, UnionMap,
+                                astBuildFromContext, astBuildNodeFromSchedule,
+                                astNodeToTree, runISL,
+                                scheduleConstraintsComputeSchedule,
+                                scheduleConstraintsOnDomain,
+                                scheduleConstraintsSetProximity,
+                                scheduleConstraintsSetValidity, set, throwISL,
+                                unionAccessInfoComputeFlow,
+                                unionAccessInfoFromSink,
+                                unionAccessInfoSetMustSource,
+                                unionAccessInfoSetScheduleMap,
+                                unionFlowGetMustDependence, unionMap,
+                                unionMapIntersectDomain, unionMapIsEmpty,
+                                unionMapLexLt, unionMapSubtract, unionMapUnion,
+                                unionSet)
 
 computeDeps :: UnionMap s -> UnionMap s -> UnionMap s -> ISL s (UnionMap s)
 computeDeps source sink schedule = do
@@ -39,12 +43,16 @@ compile domainStr writeStr reedStr scheduleStr params = runISL $ do
     wawDep <- computeDeps write' write' schedule'
     warDep <- computeDeps reed' write' schedule'
 
-    dep <- unionMapUnion rawDep wawDep
-    dep' <- unionMapUnion dep warDep
+    dep <- unionMapUnion rawDep warDep >>= unionMapUnion wawDep
+    order <- unionMapLexLt schedule' schedule'
+    violations <- unionMapSubtract dep order
+    ok <- unionMapIsEmpty violations
+    unless ok $ throwISL "Found dependences that violate the schedule"
 
+    validDep <- unionMapUnion dep order
     sc <- scheduleConstraintsOnDomain domain
-    sc' <- scheduleConstraintsSetValidity sc dep'
-    sc'' <- scheduleConstraintsSetProximity sc' wawDep
+    sc' <- scheduleConstraintsSetValidity sc validDep
+    sc'' <- scheduleConstraintsSetProximity sc' rawDep
 
     newSchedule <- scheduleConstraintsComputeSchedule sc''
 
