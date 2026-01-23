@@ -36,6 +36,7 @@ compile domainStr writeStr reedStr scheduleStr params = runISL $ do
     -- Intersect with domain
     write' <- unionMapIntersectDomain write domain
     reed' <- unionMapIntersectDomain reed domain
+
     schedule' <- unionMapIntersectDomain schedule domain
 
     -- Compute dependence

@@ -24,40 +24,40 @@ newtype AstExpr s = AstExpr (ForeignPtr IslAstExpr)
 
 -- | Pure Haskell representation of AST operations
 data AstOp
-    = OpAnd
-    | OpAndThen
-    | OpOr
-    | OpOrElse
-    | OpMax
-    | OpMin
-    | OpMinus
-    | OpAdd
-    | OpSub
-    | OpMul
-    | OpDiv
-    | OpFdivQ
-    | OpPdivQ
-    | OpPdivR
-    | OpZdivR
-    | OpCond
-    | OpSelect
-    | OpEq
-    | OpLe
-    | OpLt
-    | OpGe
-    | OpGt
-    | OpCall
-    | OpAccess
-    | OpMember
-    | OpAddressOf
-    | OpUnknown Int
+    = OpAnd [AstExpression]
+    | OpAndThen [AstExpression]
+    | OpOr [AstExpression]
+    | OpOrElse [AstExpression]
+    | OpMax [AstExpression]
+    | OpMin [AstExpression]
+    | OpMinus AstExpression
+    | OpAdd AstExpression AstExpression
+    | OpSub AstExpression AstExpression
+    | OpMul AstExpression AstExpression
+    | OpDiv AstExpression AstExpression
+    | OpFdivQ AstExpression AstExpression
+    | OpPdivQ AstExpression AstExpression
+    | OpPdivR AstExpression AstExpression
+    | OpZdivR AstExpression AstExpression
+    | OpCond AstExpression AstExpression AstExpression
+    | OpSelect AstExpression AstExpression AstExpression
+    | OpEq AstExpression AstExpression
+    | OpLe AstExpression AstExpression
+    | OpLt AstExpression AstExpression
+    | OpGe AstExpression AstExpression
+    | OpGt AstExpression AstExpression
+    | OpCall AstExpression [AstExpression]
+    | OpAccess AstExpression [AstExpression]
+    | OpMember AstExpression AstExpression
+    | OpAddressOf AstExpression
+    | OpUnknown Int [AstExpression]
     deriving (Show, Eq)
 
 -- | Pure Haskell representation of AST expressions
 data AstExpression
     = ExprId String
     | ExprInt Integer
-    | ExprOp AstOp [AstExpression]
+    | ExprOp AstOp
     | ExprError
     deriving (Show, Eq)
 

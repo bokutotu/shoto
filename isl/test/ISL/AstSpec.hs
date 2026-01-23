@@ -90,7 +90,7 @@ spec = do
                             initExpr `shouldBe` ExprInt 0
                             incExpr `shouldBe` ExprInt 1
                             case condExpr of
-                                ExprOp OpLe [ExprId "c0", ExprInt 9] -> pure ()
+                                ExprOp (OpLe (ExprId "c0") (ExprInt 9)) -> pure ()
                                 _ -> expectationFailure $ "Unexpected condition: " ++ show condExpr
                         _ -> expectationFailure $ "Expected AstFor, got: " ++ show tree
 

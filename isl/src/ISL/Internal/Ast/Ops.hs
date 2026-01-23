@@ -247,40 +247,55 @@ walkOpExpr exprFP = do
     nArgs <- liftIO $ withForeignPtr exprFP c_ast_expr_get_op_n_arg
     args <- mapM (getArg exprFP) [0 .. nArgs - 1]
     argExprs <- mapM walkExpr args
-    pure $ ExprOp (cintToOp opType) argExprs
+    pure $ ExprOp (buildOp opType argExprs)
   where
     getArg fp idx =
         manageExpr $ withForeignPtr fp $ \p -> c_ast_expr_get_op_arg p idx
 
-cintToOp :: CInt -> AstOp
-cintToOp t
-    | t == astOpAnd = OpAnd
-    | t == astOpAndThen = OpAndThen
-    | t == astOpOr = OpOr
-    | t == astOpOrElse = OpOrElse
-    | t == astOpMax = OpMax
-    | t == astOpMin = OpMin
-    | t == astOpMinus = OpMinus
-    | t == astOpAdd = OpAdd
-    | t == astOpSub = OpSub
-    | t == astOpMul = OpMul
-    | t == astOpDiv = OpDiv
-    | t == astOpFdivQ = OpFdivQ
-    | t == astOpPdivQ = OpPdivQ
-    | t == astOpPdivR = OpPdivR
-    | t == astOpZdivR = OpZdivR
-    | t == astOpCond = OpCond
-    | t == astOpSelect = OpSelect
-    | t == astOpEq = OpEq
-    | t == astOpLe = OpLe
-    | t == astOpLt = OpLt
-    | t == astOpGe = OpGe
-    | t == astOpGt = OpGt
-    | t == astOpCall = OpCall
-    | t == astOpAccess = OpAccess
-    | t == astOpMember = OpMember
-    | t == astOpAddressOf = OpAddressOf
-    | otherwise = OpUnknown (fromIntegral t)
+buildOp :: CInt -> [AstExpression] -> AstOp
+buildOp t args
+    | t == astOpAnd = OpAnd args
+    | t == astOpAndThen = OpAndThen args
+    | t == astOpOr = OpOr args
+    | t == astOpOrElse = OpOrElse args
+    | t == astOpMax = OpMax args
+    | t == astOpMin = OpMin args
+    | t == astOpMinus = unary OpMinus
+    | t == astOpAdd = binary OpAdd
+    | t == astOpSub = binary OpSub
+    | t == astOpMul = binary OpMul
+    | t == astOpDiv = binary OpDiv
+    | t == astOpFdivQ = binary OpFdivQ
+    | t == astOpPdivQ = binary OpPdivQ
+    | t == astOpPdivR = binary OpPdivR
+    | t == astOpZdivR = binary OpZdivR
+    | t == astOpCond = ternary OpCond
+    | t == astOpSelect = ternary OpSelect
+    | t == astOpEq = binary OpEq
+    | t == astOpLe = binary OpLe
+    | t == astOpLt = binary OpLt
+    | t == astOpGe = binary OpGe
+    | t == astOpGt = binary OpGt
+    | t == astOpCall = case args of
+        (f:rest) -> OpCall f rest
+        _        -> unknown
+    | t == astOpAccess = case args of
+        (arr:idxs) -> OpAccess arr idxs
+        _          -> unknown
+    | t == astOpMember = binary OpMember
+    | t == astOpAddressOf = unary OpAddressOf
+    | otherwise = unknown
+  where
+    unknown = OpUnknown (fromIntegral t) args
+    unary f = case args of
+        [a] -> f a
+        _   -> unknown
+    binary f = case args of
+        [a, b] -> f a b
+        _      -> unknown
+    ternary f = case args of
+        [a, b, c] -> f a b c
+        _         -> unknown
 
 -- Managed allocation helpers
 manageNode :: IO RawAstNode -> ISL s (ForeignPtr IslAstNode)
