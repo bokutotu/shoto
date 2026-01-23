@@ -26,11 +26,13 @@ module ISL.Map (
     unionMapSubtract,
     unionMapCoalesce,
     unionMapIsEqual,
+    unionMapIsEmpty,
     unionMapDomain,
     unionMapRange,
     unionMapReverse,
     unionMapApplyRange,
     unionMapApplyDomain,
+    unionMapLexLt,
 ) where
 
 import           ISL.Internal.Map.Ops

@@ -90,12 +90,14 @@ module ISL.Internal.FFI (
     c_umap_subtract,
     c_umap_coalesce,
     c_umap_is_equal,
+    c_umap_is_empty,
     c_umap_domain,
     c_umap_range,
     c_umap_reverse,
     c_umap_apply_range,
     c_umap_apply_domain,
     c_umap_intersect_domain,
+    c_umap_lex_lt_union_map,
 
     -- * Schedule FFI
     c_sched_read,
@@ -442,6 +444,9 @@ foreign import ccall "isl/union_map.h isl_union_map_coalesce"
 foreign import ccall "isl/union_map.h isl_union_map_is_equal"
     c_umap_is_equal :: RawUnionMap -> RawUnionMap -> IO CInt
 
+foreign import ccall "isl/union_map.h isl_union_map_is_empty"
+    c_umap_is_empty :: RawUnionMap -> IO CInt
+
 foreign import ccall "isl/union_map.h isl_union_map_domain"
     c_umap_domain :: RawUnionMap -> IO RawUnionSet
 
@@ -459,6 +464,9 @@ foreign import ccall "isl/union_map.h isl_union_map_apply_domain"
 
 foreign import ccall "isl/union_map.h isl_union_map_intersect_domain"
     c_umap_intersect_domain :: RawUnionMap -> RawUnionSet -> IO RawUnionMap
+
+foreign import ccall "isl/union_map.h isl_union_map_lex_lt_union_map"
+    c_umap_lex_lt_union_map :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
 
 -- Schedule
 foreign import ccall "isl/schedule.h isl_schedule_read_from_str"

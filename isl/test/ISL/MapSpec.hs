@@ -131,3 +131,18 @@ spec = do
                     s `shouldContain` "S[i] -> A[i]"
                     s `shouldContain` "T[i] -> B[i]"
                 Left e -> expectationFailure $ show e
+
+        it "can check if union map is empty" $ do
+            result <- runISL $ do
+                m <- unionMap "{ A[i] -> B[i] : 0 <= i <= 9 }"
+                empty <- unionMapSubtract m m
+                unionMapIsEmpty empty
+            result `shouldBe` Right True
+
+        it "can compute union map lex_lt" $ do
+            result <- runISL $ do
+                s <- unionMap "{ S[i] -> [i] }"
+                r <- unionMapLexLt s s
+                expected <- unionMap "{ S[i] -> S[j] : i < j }"
+                unionMapIsEqual r expected
+            result `shouldBe` Right True

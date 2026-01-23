@@ -26,11 +26,13 @@ module ISL.Internal.Map.Ops (
     unionMapSubtract,
     unionMapCoalesce,
     unionMapIsEqual,
+    unionMapIsEmpty,
     unionMapDomain,
     unionMapRange,
     unionMapReverse,
     unionMapApplyRange,
     unionMapApplyDomain,
+    unionMapLexLt,
 ) where
 
 import           Control.Exception      (bracket)
@@ -214,6 +216,15 @@ unionMapIsEqual (UnionMap fa) (UnionMap fb) = do
         0  -> pure False
         _  -> pure True
 
+-- | Check if a union map is empty
+unionMapIsEmpty :: UnionMap s -> ISL s Bool
+unionMapIsEmpty (UnionMap fp) = do
+    result <- liftIO $ withForeignPtr fp c_umap_is_empty
+    case result of
+        -1 -> throwISL "isl_union_map_is_empty"
+        0  -> pure False
+        _  -> pure True
+
 -- | Get the domain of a union map
 unionMapDomain :: UnionMap s -> ISL s (UnionSet s)
 unionMapDomain (UnionMap fp) = do
@@ -245,3 +256,7 @@ unionMapApplyRange = liftOp2UM c_umap_apply_range "isl_union_map_apply_range"
 -- | Apply umap2 to the domain of umap1
 unionMapApplyDomain :: UnionMap s -> UnionMap s -> ISL s (UnionMap s)
 unionMapApplyDomain = liftOp2UM c_umap_apply_domain "isl_union_map_apply_domain"
+
+-- | Lexicographic less-than relation between two union maps
+unionMapLexLt :: UnionMap s -> UnionMap s -> ISL s (UnionMap s)
+unionMapLexLt = liftOp2UM c_umap_lex_lt_union_map "isl_union_map_lex_lt_union_map"
