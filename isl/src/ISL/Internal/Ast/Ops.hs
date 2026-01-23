@@ -277,11 +277,11 @@ buildOp t args
     | t == astOpGe = binary OpGe
     | t == astOpGt = binary OpGt
     | t == astOpCall = case args of
-        (f:rest) -> OpCall f rest
-        _        -> unknown
-    | t == astOpAccess = case args of
-        (arr:idxs) -> OpAccess arr idxs
+        (f : rest) -> OpCall f rest
         _          -> unknown
+    | t == astOpAccess = case args of
+        (arr : idxs) -> OpAccess arr idxs
+        _            -> unknown
     | t == astOpMember = binary OpMember
     | t == astOpAddressOf = unary OpAddressOf
     | otherwise = unknown
