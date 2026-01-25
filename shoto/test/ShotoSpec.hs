@@ -1,7 +1,7 @@
 module ShotoSpec (spec) where
 
 import           ISL        (AstExpression (..), AstOp (..), AstTree (..))
-import           Shoto      (compile)
+import           Shoto      (CompilerArgs (..), compile)
 import           Test.Hspec
 
 spec :: Spec
@@ -13,6 +13,7 @@ spec = do
                 reed = "{ S[i] -> B[i] }"
                 schedule = "{ S[i] -> [i] }"
                 params = ["N"]
+                args = CompilerArgs domain write reed schedule params
 
                 opCall = OpCall (ExprId "S") [ExprId "c0"]
                 userAst = AstUser $ ExprOp opCall
@@ -25,7 +26,7 @@ spec = do
                         , forBody = userAst
                         }
 
-            result <- compile domain write reed schedule params
+            result <- compile args
             result `shouldBe` Right expectedAst
 
         it "swap axis" $ do
@@ -34,6 +35,7 @@ spec = do
                 reed = "{ S[i,j] -> B[i][j] }"
                 schedule = "{ S[i,j] -> [j,i] }"
                 params = ["N", "M"]
+                args = CompilerArgs domain write reed schedule params
 
                 opCall = OpCall (ExprId "S") [ExprId "c1", ExprId "c0"]
                 userAst = AstUser $ ExprOp opCall
@@ -54,5 +56,5 @@ spec = do
                         , forBody = innerFor
                         }
 
-            result <- compile domain write reed schedule params
+            result <- compile args
             result `shouldBe` Right expectedAst
