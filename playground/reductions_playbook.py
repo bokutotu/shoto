@@ -130,6 +130,49 @@ def _ast_to_c_str(*, schedule: isl.Schedule, context: isl.Set) -> str:
     return build.node_from_schedule(schedule).to_C_str()
 
 
+def transform_schedule_reorder(schedule: isl.Schedule, order: list[int]) -> isl.Schedule:
+    """
+    指定されたインデックスのリスト順にループの次元を並び替えます。
+    バンドの次元数とリストの長さが一致する場合に適用されます。
+    
+    Args:
+        schedule: 対象のisl.Schedule
+        order: 新しい次元順序を指定する整数のリスト
+               例: 3次元バンドに対して [2, 0, 1] を指定すると (i, j, k) -> (k, i, j) に変換
+    """
+    def _reorder_callback(node):
+        if node.get_type() != isl.schedule_node_type.band:
+            return node
+
+        n_members = node.band_n_member()
+
+        if len(order) != n_members:
+            return node
+
+        if not set(order).issubset(set(range(n_members))):
+            return node
+
+        partial_sched = node.band_get_partial_schedule()
+
+        space = node.band_get_space() 
+        range_space = space.range()
+        map_space = range_space.map_from_set() # { Range -> Range }
+
+        old_ma = isl.MultiAff.identity(map_space)
+        new_ma = isl.MultiAff.identity(map_space)
+
+        for i, source_idx in enumerate(order):
+            aff = old_ma.get_aff(source_idx)
+            new_ma = new_ma.set_aff(i, aff)
+
+        new_partial_sched = partial_sched.apply_multi_aff(new_ma)
+        child_node = node.delete()
+        new_node = child_node.insert_partial_schedule(new_partial_sched)
+        return new_node
+
+    return schedule.map_schedule_node_bottom_up(_reorder_callback)
+
+
 def build_kernel_model(
     *,
     name: str,
@@ -188,6 +231,8 @@ def demo_kernel(model: KernelModel) -> None:
         proximity=deps.raw.union(deps.reduction_carried),
     )
 
+    schedule = transform_schedule_reorder(schedule, [2, 1, 0])
+
     print(_ast_to_c_str(schedule=schedule, context=model.context))
 
 
@@ -211,7 +256,7 @@ def main() -> None:
     # ---------------------------------------------------------------------
     model = build_kernel_model(
         name="fused gemm + add + relu (single kernel)",
-        params="[N,M,K] -> { : }",
+        params="[N,M,K] -> { : 0 < K}",
         domain=(
             "[N,M,K] -> { "
             "S_init[i,j] : 0 <= i < N and 0 <= j < M; "
@@ -221,9 +266,9 @@ def main() -> None:
         ),
         program_order=(
             "[N,M,K] -> { "
-            "S_init[i,j] -> [i,j,0,0]; "
-            "S_gemm[i,j,k] -> [i,j,1,k]; "
-            "S_out[i,j] -> [i,j,2,0] "
+            "S_init[i,j] -> [i,j,0]; "
+            "S_gemm[i,j,k] -> [i,j,k+1]; "
+            "S_out[i,j] -> [i,j,K+1] "
             "}"
         ),
         # Writes: init and gemm update C; out writes Y
@@ -243,7 +288,7 @@ def main() -> None:
             "[N,M,K] -> { S_out[i,j] -> Bias[i,j] }",
         ],
         # Reduction is the update statement instances on accumulator C[i,j].
-        reduction_domain="[N,M,K] -> { S_gemm[i,j,k] : 0 <= i < N and 0 <= j < M and 0 <= k < K }",
+        reduction_domain="[N,M,K] -> { S_gemm[i,j,k] }",
         reduction_write="[N,M,K] -> { S_gemm[i,j,k] -> C[i,j] }",
         reduction_read="[N,M,K] -> { S_gemm[i,j,k] -> C[i,j] }",
     )

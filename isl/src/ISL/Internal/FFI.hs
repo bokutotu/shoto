@@ -63,6 +63,7 @@ module ISL.Internal.FFI (
     c_uset_subtract,
     c_uset_coalesce,
     c_uset_is_equal,
+    c_uset_is_empty,
 
     -- * Map FFI
     c_map_read,
@@ -372,6 +373,9 @@ foreign import ccall "isl/union_set.h isl_union_set_coalesce"
 
 foreign import ccall "isl/union_set.h isl_union_set_is_equal"
     c_uset_is_equal :: RawUnionSet -> RawUnionSet -> IO CInt
+
+foreign import ccall "isl/union_set.h isl_union_set_is_empty"
+    c_uset_is_empty :: RawUnionSet -> IO CInt
 
 -- Map
 foreign import ccall "isl/map.h isl_map_read_from_str"

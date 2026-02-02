@@ -20,6 +20,7 @@ module ISL.Internal.Set.Ops (
     unionSetSubtract,
     unionSetCoalesce,
     unionSetIsEqual,
+    unionSetIsEmpty,
 ) where
 
 import           Control.Exception      (bracket)
@@ -157,5 +158,14 @@ unionSetIsEqual (UnionSet fa) (UnionSet fb) = do
         withForeignPtr fb $ \pb -> c_uset_is_equal pa pb
     case result of
         -1 -> throwISL "isl_union_set_is_equal"
+        0  -> pure False
+        _  -> pure True
+
+-- | Check if a union set is empty
+unionSetIsEmpty :: UnionSet s -> ISL s Bool
+unionSetIsEmpty (UnionSet fp) = do
+    result <- liftIO $ withForeignPtr fp c_uset_is_empty
+    case result of
+        -1 -> throwISL "isl_union_set_is_empty"
         0  -> pure False
         _  -> pure True

@@ -44,3 +44,16 @@ spec = do
                 c <- setCoalesce u
                 setToString c
             result `shouldBe` Right "{ [i] : 0 <= i <= 9 }"
+
+    describe "ISL UnionSet" $ do
+        it "returns True for empty union set" $ do
+            result <- runISL $ do
+                s <- unionSet "{ }"
+                unionSetIsEmpty s
+            result `shouldBe` Right True
+
+        it "returns False for non-empty union set" $ do
+            result <- runISL $ do
+                s <- unionSet "{ A[i] : 0 <= i < 10 }"
+                unionSetIsEmpty s
+            result `shouldBe` Right False

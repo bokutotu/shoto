@@ -20,6 +20,7 @@ module ISL.Set (
     unionSetSubtract,
     unionSetCoalesce,
     unionSetIsEqual,
+    unionSetIsEmpty,
 ) where
 
 import           ISL.Internal.Set.Ops
