@@ -3,13 +3,15 @@
 
 module Polyhedral.Parse where
 
-import           ISL              (ISL, unionMap, unionMapIntersectDomain,
-                                   unionSet)
+import           ISL              (ISL, set, unionMap, unionMapIntersectDomain,
+                                   unionSet, unionSetIntersect)
 import           Polyhedral.Types (Access (..), Domain (..),
+                                   IntoUnionSet (intoUnionSet),
                                    PolyhedralModel (..), ProgramOrder (..))
 
 data RawPolyhedralModel = RawPolyhedralModel
-    { domain          :: String
+    { context         :: String
+    , domain          :: String
     , programOrder    :: String
     , readAccess      :: String
     , writeAccess     :: String
@@ -24,17 +26,19 @@ bound a (Domain dom) = Access <$> (unionMap a >>= flip unionMapIntersectDomain d
 
 parsePolyhedralModel :: RawPolyhedralModel -> ISL s (PolyhedralModel s)
 parsePolyhedralModel RawPolyhedralModel{..} = do
+    ctx <- set context
     dom <- Domain <$> unionSet domain
-    po <- unionMap programOrder
+    po <- ProgramOrder <$> (unionMap programOrder >>= flip unionMapIntersectDomain (intoUnionSet dom))
     ra <- bound readAccess dom
     wa <- bound writeAccess dom
-    rd <- Domain <$> unionSet reductionDomain
+    rd <- Domain <$> (unionSet reductionDomain >>= flip unionSetIntersect (intoUnionSet dom))
     rr <- bound reductionRead rd
     rw <- bound reductionWrite rd
     return
         PolyhedralModel
-            { domain = dom
-            , programOrder = ProgramOrder po
+            { context = ctx
+            , domain = dom
+            , programOrder = po
             , readAccess = ra
             , writeAccess = wa
             , reductionDomain = rd

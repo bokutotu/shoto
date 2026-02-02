@@ -4,10 +4,11 @@ module Polyhedral.Schedule (
     computeSchedule,
 ) where
 
-import           ISL              (ISL, Schedule,
+import           ISL              (ISL, Schedule, Set,
                                    scheduleConstraintsComputeSchedule,
                                    scheduleConstraintsOnDomain,
                                    scheduleConstraintsSetCoincidence,
+                                   scheduleConstraintsSetContext,
                                    scheduleConstraintsSetProximity,
                                    scheduleConstraintsSetValidity)
 import           Polyhedral.Types (Dependencies (..), Domain,
@@ -15,10 +16,11 @@ import           Polyhedral.Types (Dependencies (..), Domain,
                                    IntoUnionSet (intoUnionSet))
 
 -- | 依存関係制約からスケジュールを計算
-computeSchedule :: Domain s -> Dependencies s -> ISL s (Schedule s)
-computeSchedule domain deps = do
+computeSchedule :: Set s -> Domain s -> Dependencies s -> ISL s (Schedule s)
+computeSchedule ctx domain deps = do
     sc <- scheduleConstraintsOnDomain (intoUnionSet domain)
-    sc' <- scheduleConstraintsSetValidity sc (intoUnionMap deps.validity)
-    sc'' <- scheduleConstraintsSetCoincidence sc' (intoUnionMap deps.coincidence)
-    sc''' <- scheduleConstraintsSetProximity sc'' (intoUnionMap deps.proximity)
-    scheduleConstraintsComputeSchedule sc'''
+    sc' <- scheduleConstraintsSetContext sc ctx
+    sc'' <- scheduleConstraintsSetValidity sc' (intoUnionMap deps.validity)
+    sc''' <- scheduleConstraintsSetCoincidence sc'' (intoUnionMap deps.coincidence)
+    sc'''' <- scheduleConstraintsSetProximity sc''' (intoUnionMap deps.proximity)
+    scheduleConstraintsComputeSchedule sc''''

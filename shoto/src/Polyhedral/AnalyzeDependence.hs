@@ -1,10 +1,7 @@
 {-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE RecordWildCards     #-}
 
 module Polyhedral.AnalyzeDependence (
-    DependenceAnalysis (..),
     analyzeDependences,
-    toScheduleConstraints,
 ) where
 
 import           ISL              (ISL, unionAccessInfoComputeFlow,
@@ -20,16 +17,6 @@ import           Polyhedral.Types (Access (..), Dependencies (..),
                                    PolyhedralModel (..), ProgramOrder (..),
                                    ReadMap, WriteMap)
 import           Polyhedral.Unite (uniteMap)
-
--- | 依存関係解析の生結果
-data DependenceAnalysis s = DependenceAnalysis
-    { raw              :: Dependency s
-    -- ^ RAW依存
-    , reductionCarried :: Dependency s
-    -- ^ リダクション内部の依存
-    , validityBase     :: Dependency s
-    -- ^ 全依存 - リダクション依存
-    }
 
 mayDeps :: Access t1 s -> Access t2 s -> ProgramOrder s -> ISL s (Dependency s)
 mayDeps source sink po = do
@@ -61,7 +48,8 @@ reductionCarriedDeps dom redRead redWrite po = do
         readEmpty <- isEmptyMap redRead
         if readEmpty then wawDeps else reductionDeps
 
-analyzeDependences :: forall s. PolyhedralModel s -> ISL s (DependenceAnalysis s)
+-- | 多面体モデルから依存関係制約を解析
+analyzeDependences :: forall s. PolyhedralModel s -> ISL s (Dependencies s)
 analyzeDependences model = do
     raw <- mayDeps model.writeAccess model.readAccess model.programOrder
     waw <- mayDeps model.writeAccess model.writeAccess model.programOrder
@@ -73,18 +61,13 @@ analyzeDependences model = do
             model.reductionRead
             model.reductionWrite
             model.programOrder
-    validityBase <-
+    validityNoReduction <-
         fromUnionMap
             <$> unionMapSubtract (intoUnionMap allDeps) (intoUnionMap reductionCarried)
-    pure DependenceAnalysis{..}
-
--- | 解析結果からスケジューリング制約に変換
-toScheduleConstraints :: DependenceAnalysis s -> ISL s (Dependencies s)
-toScheduleConstraints analysis = do
-    prox <- uniteMap analysis.raw analysis.reductionCarried
+    prox <- uniteMap raw reductionCarried
     pure
         Dependencies
-            { validity = analysis.validityBase
-            , coincidence = analysis.validityBase
+            { validity = validityNoReduction
+            , coincidence = validityNoReduction
             , proximity = prox
             }

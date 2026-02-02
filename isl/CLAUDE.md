@@ -36,3 +36,21 @@ Integer Set Library (ISL) の Haskell バインディング。
 ```bash
 cabal test isl-test
 ```
+
+## ISL モナド (`ISL s`)
+
+ISL モナドは ISL ライブラリの `isl_ctx` を内部で管理する。ユーザーは `isl_ctx` を直接操作する必要はない。
+
+- `runISL :: ISL s a -> IO (Either IslError a)` で ISL 計算を実行
+- `isl_ctx` の確保・解放は自動的に行われる
+- FFI 関数が `isl_ctx` を必要とする場合、`ISL.Core.askEnv` で取得できる
+
+### 注意: context という名前の関数
+
+ISL には複数の「context」という名前を持つ関数がある：
+
+- `isl_ctx_*`: ISL ライブラリ全体のコンテキスト（ISL モナドが管理）
+- `isl_schedule_constraints_set_context`: パラメータ制約の Set を設定（`isl_set` 型）
+- `isl_ast_build_from_context`: AST 生成時のパラメータ制約（`isl_set` 型）
+
+`isl_schedule_constraints_set_context` や `isl_ast_build_from_context` の引数は `isl_ctx` ではなく `isl_set` である。

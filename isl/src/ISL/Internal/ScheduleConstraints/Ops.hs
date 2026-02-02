@@ -4,6 +4,7 @@ module ISL.Internal.ScheduleConstraints.Ops (
     scheduleConstraintsSetValidity,
     scheduleConstraintsSetProximity,
     scheduleConstraintsSetCoincidence,
+    scheduleConstraintsSetContext,
     scheduleConstraintsComputeSchedule,
 ) where
 
@@ -13,7 +14,8 @@ import           ISL.Internal.FFI
 import           ISL.Internal.Map.Types                 (UnionMap (..))
 import           ISL.Internal.Schedule.Types            (Schedule (..))
 import           ISL.Internal.ScheduleConstraints.Types (ScheduleConstraints (..))
-import           ISL.Internal.Set.Types                 (UnionSet (..))
+import           ISL.Internal.Set.Types                 (Set (..),
+                                                         UnionSet (..))
 
 -- | Create schedule constraints from a domain
 scheduleConstraintsOnDomain :: UnionSet s -> ISL s (ScheduleConstraints s)
@@ -52,6 +54,16 @@ scheduleConstraintsSetCoincidence (ScheduleConstraints scFP) (UnionMap umFP) = d
                 umCopy <- c_umap_copy umPtr
                 c_sched_constraints_set_coincidence scPtr umCopy
     manage c_sched_constraints_free "isl_schedule_constraints_set_coincidence" mk ScheduleConstraints
+
+-- | Set context (parameter constraints) for scheduling
+scheduleConstraintsSetContext ::
+    ScheduleConstraints s -> Set s -> ISL s (ScheduleConstraints s)
+scheduleConstraintsSetContext (ScheduleConstraints scFP) (Set setFP) = do
+    let mk = withForeignPtr scFP $ \scPtr ->
+            withForeignPtr setFP $ \setPtr -> do
+                setCopy <- c_set_copy setPtr
+                c_sched_constraints_set_context scPtr setCopy
+    manage c_sched_constraints_free "isl_schedule_constraints_set_context" mk ScheduleConstraints
 
 -- | Compute an optimal schedule from constraints
 scheduleConstraintsComputeSchedule :: ScheduleConstraints s -> ISL s (Schedule s)

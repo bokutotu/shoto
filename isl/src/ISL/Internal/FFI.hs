@@ -114,6 +114,7 @@ module ISL.Internal.FFI (
     c_sched_constraints_set_validity,
     c_sched_constraints_set_proximity,
     c_sched_constraints_set_coincidence,
+    c_sched_constraints_set_context,
     c_sched_constraints_compute_schedule,
     c_sched_constraints_free,
 
@@ -509,6 +510,10 @@ foreign import ccall "isl/schedule.h isl_schedule_constraints_set_proximity"
 foreign import ccall "isl/schedule.h isl_schedule_constraints_set_coincidence"
     c_sched_constraints_set_coincidence ::
         RawScheduleConstraints -> RawUnionMap -> IO RawScheduleConstraints
+
+foreign import ccall "isl/schedule.h isl_schedule_constraints_set_context"
+    c_sched_constraints_set_context ::
+        RawScheduleConstraints -> RawSet -> IO RawScheduleConstraints
 
 foreign import ccall "isl/schedule.h isl_schedule_constraints_compute_schedule"
     c_sched_constraints_compute_schedule :: RawScheduleConstraints -> IO RawSchedule

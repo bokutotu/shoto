@@ -3,7 +3,8 @@
 
 module Polyhedral.Types where
 
-import           ISL (ISL, UnionMap, UnionSet, unionMapIsEmpty, unionSetIsEmpty)
+import           ISL (ISL, Set, UnionMap, UnionSet, unionMapIsEmpty,
+                      unionSetIsEmpty)
 
 newtype Domain s = Domain (UnionSet s)
     deriving newtype (IsEmpty, IntoUnionSet, FromUnionSet)
@@ -22,7 +23,8 @@ data WriteMap
 data ReadMap
 
 data PolyhedralModel s = PolyhedralModel
-    { domain          :: Domain s
+    { context         :: Set s
+    , domain          :: Domain s
     , programOrder    :: ProgramOrder s
     , readAccess      :: Access ReadMap s
     , writeAccess     :: Access WriteMap s
@@ -31,14 +33,11 @@ data PolyhedralModel s = PolyhedralModel
     , reductionWrite  :: Access WriteMap s
     }
 
--- | スケジューリング用の制約
+-- TODO: 使われ方的にvalidityとcoincidenceは同じなので修正を行う
 data Dependencies s = Dependencies
     { validity    :: Dependency s
-    -- ^ 正当性制約（必ず守る）
     , coincidence :: Dependency s
-    -- ^ 並列化可能な次元
     , proximity   :: Dependency s
-    -- ^ 局所性のための近接制約
     }
 
 class Empty a where

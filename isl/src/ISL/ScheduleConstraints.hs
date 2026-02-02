@@ -7,6 +7,7 @@ module ISL.ScheduleConstraints (
     scheduleConstraintsSetValidity,
     scheduleConstraintsSetProximity,
     scheduleConstraintsSetCoincidence,
+    scheduleConstraintsSetContext,
     scheduleConstraintsComputeSchedule,
 ) where
 
