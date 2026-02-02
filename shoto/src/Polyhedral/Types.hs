@@ -31,10 +31,14 @@ data PolyhedralModel s = PolyhedralModel
     , reductionWrite  :: Access WriteMap s
     }
 
+-- | スケジューリング用の制約
 data Dependencies s = Dependencies
-    { raw                 :: Dependency s
-    , reductionCarried    :: Dependency s
-    , validityNoReduction :: Dependency s
+    { validity    :: Dependency s
+    -- ^ 正当性制約（必ず守る）
+    , coincidence :: Dependency s
+    -- ^ 並列化可能な次元
+    , proximity   :: Dependency s
+    -- ^ 局所性のための近接制約
     }
 
 class Empty a where
