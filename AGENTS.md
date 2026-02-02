@@ -84,3 +84,13 @@ Integer Set Library (ISL) の Haskell バインディング。
 ```bash
 cabal test isl-test
 ```
+
+## ドキュメント更新
+
+計画（plan mode）が完了するたびに、必要に応じて以下のファイルを更新すること：
+
+- `/CLAUDE.md` - Claude Code 用の指示
+- `/AGENTS.md` - 複数 AI ツール共有の指示
+- `/isl/CLAUDE.md` - ISL パッケージ固有の規約
+
+`AGENTS.md` と `CLAUDE.md` の共通部分は同期を保つこと。
