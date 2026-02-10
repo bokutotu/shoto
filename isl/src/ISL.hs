@@ -9,6 +9,7 @@ module ISL (
     module ISL.Set,
     module ISL.Map,
     module ISL.Schedule,
+    module ISL.ScheduleNode,
     module ISL.ScheduleConstraints,
     module ISL.Flow,
     module ISL.Ast,
@@ -20,4 +21,5 @@ import           ISL.Flow
 import           ISL.Map
 import           ISL.Schedule
 import           ISL.ScheduleConstraints
+import           ISL.ScheduleNode
 import           ISL.Set

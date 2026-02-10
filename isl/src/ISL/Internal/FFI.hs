@@ -7,8 +7,15 @@ module ISL.Internal.FFI (
     IslUnionSet,
     IslMap,
     IslUnionMap,
+    IslUnionPwAff,
     IslSchedule,
     IslScheduleConstraints,
+    IslScheduleNode,
+    IslSpace,
+    IslAff,
+    IslMultiAff,
+    IslMultiUnionPwAff,
+    IslMultiVal,
     IslId,
     IslAstBuild,
     IslAstNode,
@@ -23,8 +30,15 @@ module ISL.Internal.FFI (
     RawUnionSet,
     RawMap,
     RawUnionMap,
+    RawUnionPwAff,
     RawSchedule,
     RawScheduleConstraints,
+    RawScheduleNode,
+    RawSpace,
+    RawAff,
+    RawMultiAff,
+    RawMultiUnionPwAff,
+    RawMultiVal,
     RawId,
     RawAstBuild,
     RawAstNode,
@@ -100,6 +114,10 @@ module ISL.Internal.FFI (
     c_umap_intersect_domain,
     c_umap_lex_lt_union_map,
 
+    -- * Union PwAff FFI
+    c_upa_copy,
+    c_upa_free,
+
     -- * Schedule FFI
     c_sched_read,
     c_sched_to_str,
@@ -107,6 +125,7 @@ module ISL.Internal.FFI (
     c_sched_copy,
     c_sched_from_domain,
     c_sched_get_domain,
+    c_sched_get_root,
     c_sched_plain_is_equal,
 
     -- * Schedule Constraints FFI
@@ -117,6 +136,49 @@ module ISL.Internal.FFI (
     c_sched_constraints_set_context,
     c_sched_constraints_compute_schedule,
     c_sched_constraints_free,
+
+    -- * Schedule Node FFI
+    c_sched_node_copy,
+    c_sched_node_free,
+    c_sched_node_get_type,
+    c_sched_node_n_children,
+    c_sched_node_child,
+    c_sched_node_parent,
+    c_sched_node_root,
+    c_sched_node_get_schedule,
+    c_sched_node_delete,
+    c_sched_node_insert_partial_schedule,
+    c_sched_node_insert_mark,
+    c_sched_node_mark_get_id,
+    c_sched_node_band_get_space,
+    c_sched_node_band_get_partial_schedule,
+    c_sched_node_band_n_member,
+    c_sched_node_band_tile,
+
+    -- * Space FFI
+    c_space_copy,
+    c_space_free,
+    c_space_map_from_set,
+    c_space_range,
+
+    -- * Aff FFI
+    c_aff_copy,
+    c_aff_free,
+
+    -- * Multi Aff FFI
+    c_maff_copy,
+    c_maff_free,
+    c_maff_identity,
+    c_maff_identity_on_domain_space,
+    c_maff_get_at,
+    c_maff_set_at,
+
+    -- * Multi Union Pw Aff FFI
+    c_mupa_copy,
+    c_mupa_free,
+    c_mupa_get_at,
+    c_mupa_set_at,
+    c_mupa_apply_maff,
 
     -- * Union Access Info FFI
     c_union_access_info_from_sink,
@@ -133,6 +195,8 @@ module ISL.Internal.FFI (
     c_union_flow_free,
 
     -- * ID FFI
+    c_id_alloc,
+    c_id_copy,
     c_id_free,
     c_id_get_name,
 
@@ -176,8 +240,16 @@ module ISL.Internal.FFI (
     c_ast_expr_get_op_arg,
 
     -- * Val FFI
+    c_val_int_from_si,
+    c_val_copy,
     c_val_get_num_si,
     c_val_free,
+
+    -- * Multi Val FFI
+    c_mval_copy,
+    c_mval_free,
+    c_mval_zero,
+    c_mval_set_at,
 
     -- * Printer FFI
     c_printer_to_str,
@@ -249,9 +321,23 @@ data IslMap
 
 data IslUnionMap
 
+data IslUnionPwAff
+
 data IslSchedule
 
 data IslScheduleConstraints
+
+data IslScheduleNode
+
+data IslSpace
+
+data IslAff
+
+data IslMultiAff
+
+data IslMultiUnionPwAff
+
+data IslMultiVal
 
 data IslId
 
@@ -281,9 +367,23 @@ type RawMap = Ptr IslMap
 
 type RawUnionMap = Ptr IslUnionMap
 
+type RawUnionPwAff = Ptr IslUnionPwAff
+
 type RawSchedule = Ptr IslSchedule
 
 type RawScheduleConstraints = Ptr IslScheduleConstraints
+
+type RawScheduleNode = Ptr IslScheduleNode
+
+type RawSpace = Ptr IslSpace
+
+type RawAff = Ptr IslAff
+
+type RawMultiAff = Ptr IslMultiAff
+
+type RawMultiUnionPwAff = Ptr IslMultiUnionPwAff
+
+type RawMultiVal = Ptr IslMultiVal
 
 type RawId = Ptr IslId
 
@@ -473,6 +573,13 @@ foreign import ccall "isl/union_map.h isl_union_map_intersect_domain"
 foreign import ccall "isl/union_map.h isl_union_map_lex_lt_union_map"
     c_umap_lex_lt_union_map :: RawUnionMap -> RawUnionMap -> IO RawUnionMap
 
+-- Union PwAff
+foreign import ccall "isl/aff.h isl_union_pw_aff_copy"
+    c_upa_copy :: RawUnionPwAff -> IO RawUnionPwAff
+
+foreign import ccall "isl/aff.h isl_union_pw_aff_free"
+    c_upa_free :: RawUnionPwAff -> IO ()
+
 -- Schedule
 foreign import ccall "isl/schedule.h isl_schedule_read_from_str"
     c_sched_read :: RawCtx -> CString -> IO RawSchedule
@@ -491,6 +598,9 @@ foreign import ccall "isl/schedule.h isl_schedule_from_domain"
 
 foreign import ccall "isl/schedule.h isl_schedule_get_domain"
     c_sched_get_domain :: RawSchedule -> IO RawUnionSet
+
+foreign import ccall "isl/schedule.h isl_schedule_get_root"
+    c_sched_get_root :: RawSchedule -> IO RawScheduleNode
 
 foreign import ccall "isl/schedule.h isl_schedule_plain_is_equal"
     c_sched_plain_is_equal :: RawSchedule -> RawSchedule -> IO CInt
@@ -520,6 +630,110 @@ foreign import ccall "isl/schedule.h isl_schedule_constraints_compute_schedule"
 
 foreign import ccall "isl/schedule.h isl_schedule_constraints_free"
     c_sched_constraints_free :: RawScheduleConstraints -> IO ()
+
+-- Schedule Node
+foreign import ccall "isl/schedule_node.h isl_schedule_node_copy"
+    c_sched_node_copy :: RawScheduleNode -> IO RawScheduleNode
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_free"
+    c_sched_node_free :: RawScheduleNode -> IO ()
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_get_type"
+    c_sched_node_get_type :: RawScheduleNode -> IO CInt
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_n_children"
+    c_sched_node_n_children :: RawScheduleNode -> IO CInt
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_child"
+    c_sched_node_child :: RawScheduleNode -> CInt -> IO RawScheduleNode
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_parent"
+    c_sched_node_parent :: RawScheduleNode -> IO RawScheduleNode
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_root"
+    c_sched_node_root :: RawScheduleNode -> IO RawScheduleNode
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_get_schedule"
+    c_sched_node_get_schedule :: RawScheduleNode -> IO RawSchedule
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_delete"
+    c_sched_node_delete :: RawScheduleNode -> IO RawScheduleNode
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_insert_partial_schedule"
+    c_sched_node_insert_partial_schedule :: RawScheduleNode -> RawMultiUnionPwAff -> IO RawScheduleNode
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_insert_mark"
+    c_sched_node_insert_mark :: RawScheduleNode -> RawId -> IO RawScheduleNode
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_mark_get_id"
+    c_sched_node_mark_get_id :: RawScheduleNode -> IO RawId
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_band_get_space"
+    c_sched_node_band_get_space :: RawScheduleNode -> IO RawSpace
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_band_get_partial_schedule"
+    c_sched_node_band_get_partial_schedule :: RawScheduleNode -> IO RawMultiUnionPwAff
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_band_n_member"
+    c_sched_node_band_n_member :: RawScheduleNode -> IO CInt
+
+foreign import ccall "isl/schedule_node.h isl_schedule_node_band_tile"
+    c_sched_node_band_tile :: RawScheduleNode -> RawMultiVal -> IO RawScheduleNode
+
+-- Space
+foreign import ccall "isl/space.h isl_space_copy"
+    c_space_copy :: RawSpace -> IO RawSpace
+
+foreign import ccall "isl/space.h isl_space_free"
+    c_space_free :: RawSpace -> IO ()
+
+foreign import ccall "isl/space.h isl_space_range"
+    c_space_range :: RawSpace -> IO RawSpace
+
+foreign import ccall "isl/space.h isl_space_map_from_set"
+    c_space_map_from_set :: RawSpace -> IO RawSpace
+
+-- Aff
+foreign import ccall "isl/aff.h isl_aff_copy"
+    c_aff_copy :: RawAff -> IO RawAff
+
+foreign import ccall "isl/aff.h isl_aff_free"
+    c_aff_free :: RawAff -> IO ()
+
+-- MultiAff
+foreign import ccall "isl/aff.h isl_multi_aff_copy"
+    c_maff_copy :: RawMultiAff -> IO RawMultiAff
+
+foreign import ccall "isl/aff.h isl_multi_aff_free"
+    c_maff_free :: RawMultiAff -> IO ()
+
+foreign import ccall "isl/aff.h isl_multi_aff_identity"
+    c_maff_identity :: RawSpace -> IO RawMultiAff
+
+foreign import ccall "isl/aff.h isl_multi_aff_identity_on_domain_space"
+    c_maff_identity_on_domain_space :: RawSpace -> IO RawMultiAff
+
+foreign import ccall "isl/aff.h isl_multi_aff_get_at"
+    c_maff_get_at :: RawMultiAff -> CInt -> IO RawAff
+
+foreign import ccall "isl/aff.h isl_multi_aff_set_at"
+    c_maff_set_at :: RawMultiAff -> CInt -> RawAff -> IO RawMultiAff
+
+-- MultiUnionPwAff
+foreign import ccall "isl/aff.h isl_multi_union_pw_aff_copy"
+    c_mupa_copy :: RawMultiUnionPwAff -> IO RawMultiUnionPwAff
+
+foreign import ccall "isl/aff.h isl_multi_union_pw_aff_free"
+    c_mupa_free :: RawMultiUnionPwAff -> IO ()
+
+foreign import ccall "isl/aff.h isl_multi_union_pw_aff_get_at"
+    c_mupa_get_at :: RawMultiUnionPwAff -> CInt -> IO RawUnionPwAff
+
+foreign import ccall "isl/aff.h isl_multi_union_pw_aff_set_at"
+    c_mupa_set_at :: RawMultiUnionPwAff -> CInt -> RawUnionPwAff -> IO RawMultiUnionPwAff
+
+foreign import ccall "isl/aff.h isl_multi_union_pw_aff_apply_multi_aff"
+    c_mupa_apply_maff :: RawMultiUnionPwAff -> RawMultiAff -> IO RawMultiUnionPwAff
 
 -- Union Access Info Operations
 foreign import ccall "isl/flow.h isl_union_access_info_from_sink"
@@ -557,6 +771,12 @@ foreign import ccall "isl/flow.h isl_union_flow_free"
     c_union_flow_free :: RawUnionFlow -> IO ()
 
 -- ID Operations
+foreign import ccall "isl/id.h isl_id_alloc"
+    c_id_alloc :: RawCtx -> CString -> Ptr () -> IO RawId
+
+foreign import ccall "isl/id.h isl_id_copy"
+    c_id_copy :: RawId -> IO RawId
+
 foreign import ccall "isl/id.h isl_id_free"
     c_id_free :: RawId -> IO ()
 
@@ -666,11 +886,30 @@ foreign import ccall "isl/ast.h isl_ast_expr_get_op_arg"
     c_ast_expr_get_op_arg :: RawAstExpr -> CInt -> IO RawAstExpr
 
 -- Val Operations
+foreign import ccall "isl/val.h isl_val_int_from_si"
+    c_val_int_from_si :: RawCtx -> CLong -> IO RawVal
+
+foreign import ccall "isl/val.h isl_val_copy"
+    c_val_copy :: RawVal -> IO RawVal
+
 foreign import ccall "isl/val.h isl_val_get_num_si"
     c_val_get_num_si :: RawVal -> IO CLong
 
 foreign import ccall "isl/val.h isl_val_free"
     c_val_free :: RawVal -> IO ()
+
+-- MultiVal
+foreign import ccall "isl/val.h isl_multi_val_copy"
+    c_mval_copy :: RawMultiVal -> IO RawMultiVal
+
+foreign import ccall "isl/val.h isl_multi_val_free"
+    c_mval_free :: RawMultiVal -> IO ()
+
+foreign import ccall "isl/val.h isl_multi_val_zero"
+    c_mval_zero :: RawSpace -> IO RawMultiVal
+
+foreign import ccall "isl/val.h isl_multi_val_set_at"
+    c_mval_set_at :: RawMultiVal -> CInt -> RawVal -> IO RawMultiVal
 
 -- Printer Operations
 foreign import ccall "isl/printer.h isl_printer_to_str"
