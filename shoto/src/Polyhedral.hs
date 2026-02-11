@@ -1,6 +1,7 @@
 module Polyhedral (
     synthesize,
     RawPolyhedralModel (..),
+    ScheduleOptimization (..),
 ) where
 
 import           ISL                          (AstTree, ISL,
@@ -8,15 +9,18 @@ import           ISL                          (AstTree, ISL,
                                                astBuildNodeFromSchedule,
                                                astNodeToTree)
 import           Polyhedral.AnalyzeDependence (analyzeDependences)
+import           Polyhedral.Optimize          (ScheduleOptimization (..),
+                                               applyScheduleOptimizations)
 import           Polyhedral.Parse             (RawPolyhedralModel (..),
                                                parsePolyhedralModel)
 import           Polyhedral.Schedule          (computeSchedule)
 import           Polyhedral.Types             (PolyhedralModel (..))
 
-synthesize :: RawPolyhedralModel -> ISL s AstTree
-synthesize raw = do
+synthesize :: [ScheduleOptimization] -> RawPolyhedralModel -> ISL s AstTree
+synthesize optimizations raw = do
     model@PolyhedralModel{context = ctx, domain = dom} <- parsePolyhedralModel raw
     schedule <- analyzeDependences model >>= computeSchedule ctx dom
+    optimizedSchedule <- applyScheduleOptimizations optimizations schedule
     build <- astBuildFromContext ctx
-    node <- astBuildNodeFromSchedule build schedule
+    node <- astBuildNodeFromSchedule build optimizedSchedule
     astNodeToTree node
