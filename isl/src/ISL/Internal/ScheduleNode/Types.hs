@@ -28,15 +28,15 @@ data ScheduleNodeType
 scheduleNodeTypeFromCInt :: CInt -> ScheduleNodeType
 scheduleNodeTypeFromCInt t =
     case t of
-        0  -> ScheduleNodeBand
-        1  -> ScheduleNodeContext
-        2  -> ScheduleNodeDomain
-        3  -> ScheduleNodeExpansion
-        4  -> ScheduleNodeExtension
-        5  -> ScheduleNodeFilter
-        6  -> ScheduleNodeLeaf
-        7  -> ScheduleNodeGuard
-        8  -> ScheduleNodeMark
-        9  -> ScheduleNodeSequence
+        0 -> ScheduleNodeBand
+        1 -> ScheduleNodeContext
+        2 -> ScheduleNodeDomain
+        3 -> ScheduleNodeExpansion
+        4 -> ScheduleNodeExtension
+        5 -> ScheduleNodeFilter
+        6 -> ScheduleNodeLeaf
+        7 -> ScheduleNodeGuard
+        8 -> ScheduleNodeMark
+        9 -> ScheduleNodeSequence
         10 -> ScheduleNodeSet
-        _  -> ScheduleNodeUnknown (fromIntegral t)
+        _ -> ScheduleNodeUnknown (fromIntegral t)

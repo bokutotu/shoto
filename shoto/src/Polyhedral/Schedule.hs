@@ -20,7 +20,8 @@ computeSchedule :: Set s -> Domain s -> Dependencies s -> ISL s (Schedule s)
 computeSchedule ctx domain deps = do
     sc <- scheduleConstraintsOnDomain (intoUnionSet domain)
     sc' <- scheduleConstraintsSetContext sc ctx
-    sc'' <- scheduleConstraintsSetValidity sc' (intoUnionMap deps.validity)
-    sc''' <- scheduleConstraintsSetCoincidence sc'' (intoUnionMap deps.coincidence)
+    let must = intoUnionMap deps.legality
+    sc'' <- scheduleConstraintsSetValidity sc' must
+    sc''' <- scheduleConstraintsSetCoincidence sc'' must
     sc'''' <- scheduleConstraintsSetProximity sc''' (intoUnionMap deps.proximity)
     scheduleConstraintsComputeSchedule sc''''

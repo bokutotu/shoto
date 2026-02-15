@@ -50,7 +50,7 @@ applyToBandNodes transform sched =
         nodeType <- scheduleNodeGetType node
         case nodeType of
             ScheduleNodeBand -> transform node
-            _                -> pure node
+            _ -> pure node
 
 tileBandMultiLevel :: [[Int]] -> ScheduleNode s -> ISL s (ScheduleNode s)
 tileBandMultiLevel [] node = pure node

@@ -148,4 +148,4 @@ normalizePrettySchedule =
     stripMargin line =
         case dropWhile (== ' ') line of
             ('|' : rest) -> rest
-            other        -> other
+            other -> other

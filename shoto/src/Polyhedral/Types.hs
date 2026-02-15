@@ -23,21 +23,23 @@ data WriteMap
 data ReadMap
 
 data PolyhedralModel s = PolyhedralModel
-    { context         :: Set s
-    , domain          :: Domain s
-    , programOrder    :: ProgramOrder s
-    , readAccess      :: Access ReadMap s
-    , writeAccess     :: Access WriteMap s
+    { context :: Set s
+    , domain :: Domain s
+    , programOrder :: ProgramOrder s
+    , readAccess :: Access ReadMap s
+    , writeAccess :: Access WriteMap s
     , reductionDomain :: Domain s
-    , reductionRead   :: Access ReadMap s
-    , reductionWrite  :: Access WriteMap s
+    , reductionRead :: Access ReadMap s
+    , reductionWrite :: Access WriteMap s
     }
 
--- TODO: 使われ方的にvalidityとcoincidenceは同じなので修正を行う
+{- | Scheduling constraints derived from dependences.
+
+Currently we use the same relation for both isl's validity and coincidence.
+-}
 data Dependencies s = Dependencies
-    { validity    :: Dependency s
-    , coincidence :: Dependency s
-    , proximity   :: Dependency s
+    { legality :: Dependency s
+    , proximity :: Dependency s
     }
 
 class Empty a where

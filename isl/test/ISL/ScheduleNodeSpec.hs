@@ -82,7 +82,7 @@ countBandNodes sched = scheduleGetRoot sched >>= go
         let here =
                 case ty of
                     ScheduleNodeBand -> 1
-                    _                -> 0
+                    _ -> 0
         n <- scheduleNodeNChildren node
         children <- mapM (\i -> scheduleNodeChild node i >>= go) [0 .. n - 1]
         pure $ here + sum children

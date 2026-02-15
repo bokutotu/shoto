@@ -97,8 +97,8 @@ setIsEqual (Set fa) (Set fb) = do
         withForeignPtr fb $ \pb -> c_set_is_equal pa pb
     case result of
         -1 -> throwISL "isl_set_is_equal"
-        0  -> pure False
-        _  -> pure True
+        0 -> pure False
+        _ -> pure True
 
 -- =========================================================
 -- UnionSet Implementation
@@ -158,8 +158,8 @@ unionSetIsEqual (UnionSet fa) (UnionSet fb) = do
         withForeignPtr fb $ \pb -> c_uset_is_equal pa pb
     case result of
         -1 -> throwISL "isl_union_set_is_equal"
-        0  -> pure False
-        _  -> pure True
+        0 -> pure False
+        _ -> pure True
 
 -- | Check if a union set is empty
 unionSetIsEmpty :: UnionSet s -> ISL s Bool
@@ -167,5 +167,5 @@ unionSetIsEmpty (UnionSet fp) = do
     result <- liftIO $ withForeignPtr fp c_uset_is_empty
     case result of
         -1 -> throwISL "isl_union_set_is_empty"
-        0  -> pure False
-        _  -> pure True
+        0 -> pure False
+        _ -> pure True

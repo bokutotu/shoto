@@ -10,14 +10,14 @@ import           Polyhedral.Types (Access (..), Domain (..),
                                    PolyhedralModel (..), ProgramOrder (..))
 
 data RawPolyhedralModel = RawPolyhedralModel
-    { context         :: String
-    , domain          :: String
-    , programOrder    :: String
-    , readAccess      :: String
-    , writeAccess     :: String
+    { context :: String
+    , domain :: String
+    , programOrder :: String
+    , readAccess :: String
+    , writeAccess :: String
     , reductionDomain :: String
-    , reductionRead   :: String
-    , reductionWrite  :: String
+    , reductionRead :: String
+    , reductionWrite :: String
     }
     deriving (Show, Eq)
 

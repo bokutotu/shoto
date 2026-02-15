@@ -67,7 +67,6 @@ analyzeDependences model = do
     prox <- uniteMap raw reductionCarried
     pure
         Dependencies
-            { validity = validityNoReduction
-            , coincidence = validityNoReduction
+            { legality = validityNoReduction
             , proximity = prox
             }

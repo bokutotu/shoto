@@ -110,8 +110,8 @@ mapIsEqual (Map fa) (Map fb) = do
         withForeignPtr fb $ \pb -> c_map_is_equal pa pb
     case result of
         -1 -> throwISL "isl_map_is_equal"
-        0  -> pure False
-        _  -> pure True
+        0 -> pure False
+        _ -> pure True
 
 -- | Get the domain of a map
 mapDomain :: Map s -> ISL s (Set s)
@@ -213,8 +213,8 @@ unionMapIsEqual (UnionMap fa) (UnionMap fb) = do
         withForeignPtr fb $ \pb -> c_umap_is_equal pa pb
     case result of
         -1 -> throwISL "isl_union_map_is_equal"
-        0  -> pure False
-        _  -> pure True
+        0 -> pure False
+        _ -> pure True
 
 -- | Check if a union map is empty
 unionMapIsEmpty :: UnionMap s -> ISL s Bool
@@ -222,8 +222,8 @@ unionMapIsEmpty (UnionMap fp) = do
     result <- liftIO $ withForeignPtr fp c_umap_is_empty
     case result of
         -1 -> throwISL "isl_union_map_is_empty"
-        0  -> pure False
-        _  -> pure True
+        0 -> pure False
+        _ -> pure True
 
 -- | Get the domain of a union map
 unionMapDomain :: UnionMap s -> ISL s (UnionSet s)
