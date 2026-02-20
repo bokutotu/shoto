@@ -1,46 +1,46 @@
-## Shotoとは
+## What Is Shoto
 
-Shotoは多面体コンパイラ（polyhedral compiler）である。テンソル計算を記述し、GPUカーネル/SIMDコードを生成することを目的とする。
-今は、C言語をシンプルに出力している
+Shoto is a polyhedral compiler. Its goal is to describe tensor computations and generate GPU kernel/SIMD code.
+At the moment, it simply outputs C code.
 
-## パッケージ構成
+## Package Structure
 
 ### shoto
 
-メインのコンパイラパッケージ。
+The main compiler package.
 
 ### isl
 
-Integer Set Library (ISL) のHaskellバインディング。多面体解析の数学的基盤を提供する。shotoから独立したパッケージとして分離することで、ISLバインディング単体での再利用を可能にする。
+Haskell bindings for Integer Set Library (ISL). It provides the mathematical foundation for polyhedral analysis. By separating it as an independent package from shoto, the ISL bindings can be reused on their own.
 
-## 言語・スタイル
+## Language and Style
 
-- **GHC2024**: 最新のHaskell言語拡張セットを使用
-- **Leading comma**: カンマ先頭スタイル（差分が見やすい）
-- **4スペースインデント**
+- **GHC2024**: Use the latest Haskell language extension set
+- **Leading comma**: Leading-comma style (easier to review diffs)
+- **4-space indentation**
 
-## 前提
+## Prerequisites
 
-`nix develop`環境内で実行すること。lefthookによりコミット時にフォーマットとテストが自動実行される。
+Run inside the `nix develop` environment. `lefthook` automatically runs formatting and tests on commit.
 
-## テスト
+## Test
 
 ```bash
 cabal test all
 ```
 
-## lint
+## Lint
 
 ```bash
 hlint .
 ```
 
-自動で修正を試みる
+Try automatic fixes:
 ```bash
 ./hlint-refactor.sh
 ```
 
-## フォーマット
+## Formatting
 
 ```bash
 ./format.sh
@@ -48,67 +48,67 @@ hlint .
 
 # ISL Haskell Bindings
 
-Integer Set Library (ISL) の Haskell バインディング。
-多面体解析（polyhedral analysis）の基盤ライブラリ。
+Haskell bindings for Integer Set Library (ISL).
+A foundational library for polyhedral analysis.
 
-## モジュール構成
+## Module Structure
 
-- `ISL.Core` - ISL計算モナド（`runISL`）、エラー型
-- `ISL.*` - 各ドメインの公開API（Set, Map, Schedule等）
-- `ISL.Internal.FFI` - C FFI バインディング
-- `ISL.Internal.<Module>/Types.hs` - 型定義
-- `ISL.Internal.<Module>/Ops.hs` - 操作実装
+- `ISL.Core` - ISL computation monad (`runISL`) and error types
+- `ISL.*` - Public APIs for each domain (Set, Map, Schedule, etc.)
+- `ISL.Internal.FFI` - C FFI bindings
+- `ISL.Internal.<Module>/Types.hs` - Type definitions
+- `ISL.Internal.<Module>/Ops.hs` - Operation implementations
 
-## 開発規約
+## Development Rules
 
-### 新機能追加時
+### When Adding New Features
 
-新しい関数・モジュールを追加する際は、必ず対応するテストも同時に追加すること。
+When adding new functions or modules, always add the corresponding tests at the same time.
 
-1. `ISL.Internal.FFI` に `foreign import` を追加
-2. `Internal/<Module>/Ops.hs` にラッパー実装
-3. 公開APIは `ISL/<Module>.hs` から再エクスポート
-4. **テストを `test/ISL/<Module>Spec.hs` に追加**
+1. Add `foreign import` to `ISL.Internal.FFI`
+2. Implement wrappers in `Internal/<Module>/Ops.hs`
+3. Re-export the public API from `ISL/<Module>.hs`
+4. **Add tests in `test/ISL/<Module>Spec.hs`**
 
-### テストの書き方
+### How to Write Tests
 
-全一致を検証するアサーションを使うこと：
+Use assertions that verify exact matches:
 
-- `shouldBe` - 値の完全一致
-- `shouldMatchList` - リストの要素一致（順序不問）
+- `shouldBe` - Exact value match
+- `shouldMatchList` - List element match (order-insensitive)
 
-部分一致の `shouldContain` は原則使わない。
+As a rule, do not use partial-match assertions like `shouldContain`.
 
-## テスト実行
+## Running Tests
 
 ```bash
 cabal test isl-test
 ```
 
-## ISL モナド (`ISL s`)
+## ISL Monad (`ISL s`)
 
-ISL モナドは ISL ライブラリの `isl_ctx` を内部で管理する。ユーザーは `isl_ctx` を直接操作する必要はない。
+The ISL monad internally manages the ISL library's `isl_ctx`. Users do not need to manipulate `isl_ctx` directly.
 
-- `runISL :: ISL s a -> IO (Either IslError a)` で ISL 計算を実行
-- `isl_ctx` の確保・解放は自動的に行われる
-- FFI 関数が `isl_ctx` を必要とする場合、`ISL.Core.askEnv` で取得できる
+- Run ISL computations with `runISL :: ISL s a -> IO (Either IslError a)`
+- Allocation and deallocation of `isl_ctx` are handled automatically
+- If an FFI function requires `isl_ctx`, you can obtain it via `ISL.Core.askEnv`
 
-### 注意: context という名前の関数
+### Note: Functions Named `context`
 
-ISL には複数の「context」という名前を持つ関数がある：
+ISL has multiple functions named "context":
 
-- `isl_ctx_*`: ISL ライブラリ全体のコンテキスト（ISL モナドが管理）
-- `isl_schedule_constraints_set_context`: パラメータ制約の Set を設定（`isl_set` 型）
-- `isl_ast_build_from_context`: AST 生成時のパラメータ制約（`isl_set` 型）
+- `isl_ctx_*`: Context for the entire ISL library (managed by the ISL monad)
+- `isl_schedule_constraints_set_context`: Sets a parameter-constraint Set (type `isl_set`)
+- `isl_ast_build_from_context`: Parameter constraints for AST generation (type `isl_set`)
 
-`isl_schedule_constraints_set_context` や `isl_ast_build_from_context` の引数は `isl_ctx` ではなく `isl_set` である。
+The arguments to `isl_schedule_constraints_set_context` and `isl_ast_build_from_context` are `isl_set`, not `isl_ctx`.
 
-## ドキュメント更新
+## Documentation Updates
 
-計画（plan mode）が完了するたびに、必要に応じて以下のファイルを更新すること：
+Each time planning (plan mode) is completed, update the following files as needed:
 
-- `/CLAUDE.md` - Claude Code 用の指示
-- `/AGENTS.md` - 複数 AI ツール共有の指示
-- `/isl/CLAUDE.md` - ISL パッケージ固有の規約
+- `/CLAUDE.md` - Instructions for Claude Code
+- `/AGENTS.md` - Shared instructions for multiple AI tools
+- `/isl/CLAUDE.md` - ISL package-specific conventions
 
-`AGENTS.md` と `CLAUDE.md` の共通部分は同期を保つこと。
+Keep shared sections in `AGENTS.md` and `CLAUDE.md` synchronized.
