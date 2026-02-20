@@ -2,9 +2,11 @@
 
 module FrontendIRSpec (spec) where
 
-import           FrontendIR (Axis (..), Expr (..), FrontendError (..),
-                             IxExpr (..), Program (..), Stmt (..), lowerToRaw)
-import           Polyhedral (RawPolyhedralModel (..))
+import qualified Data.List.NonEmpty as NE
+import           FrontendIR         (Axis (..), Expr (..), FrontendError (..),
+                                     IxExpr (..), Program (..), Stmt (..),
+                                     checkProgram, lowerToRaw)
+import           Polyhedral         (RawPolyhedralModel (..))
 import           Test.Hspec
 
 spec :: Spec
@@ -14,9 +16,10 @@ spec = do
             let front =
                     Program
                         { axes =
-                            [ Axis{iter = "i", extent = "N"}
-                            , Axis{iter = "j", extent = "M"}
-                            ]
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "C"
@@ -40,13 +43,14 @@ spec = do
                         , reductionWrite = "{ }"
                         }
 
-            lowerToRaw front `shouldBe` Right expected
+            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
 
         it "lowers a constant write with empty read access" $ do
             let front =
                     Program
                         { axes =
-                            [Axis{iter = "i", extent = "N"}]
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -67,15 +71,16 @@ spec = do
                         , reductionWrite = "{ }"
                         }
 
-            lowerToRaw front `shouldBe` Right expected
+            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
 
         it "fails when store indices do not match loop axes" $ do
             let invalid =
                     Program
                         { axes =
-                            [ Axis{iter = "i", extent = "N"}
-                            , Axis{iter = "j", extent = "M"}
-                            ]
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "C"
@@ -84,15 +89,16 @@ spec = do
                                 }
                         }
 
-            lowerToRaw invalid `shouldBe` Left (ErrStoreIndexMismatch ["i", "j"] ["j", "i"])
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrStoreIndexMismatch ["i", "j"] ["j", "i"])
 
         it "fails when duplicate iterators are declared" $ do
             let invalid =
                     Program
                         { axes =
-                            [ Axis{iter = "i", extent = "N"}
-                            , Axis{iter = "i", extent = "M"}
-                            ]
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "i", extent = "M"}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "C"
@@ -101,4 +107,4 @@ spec = do
                                 }
                         }
 
-            lowerToRaw invalid `shouldBe` Left (ErrDuplicateIter "i")
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrDuplicateIter "i")

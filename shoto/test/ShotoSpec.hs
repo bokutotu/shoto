@@ -2,12 +2,13 @@
 
 module ShotoSpec (spec) where
 
-import           FrontendIR (Axis (..), Expr (..), FrontendError (..),
-                             IxExpr (..), Program (..), Stmt (..))
-import           ISL        (AstExpression (..), AstOp (..), AstTree (..),
-                             IslError (..))
-import           Polyhedral (ScheduleOptimization (..))
-import           Shoto      (CompileError (..), compile)
+import qualified Data.List.NonEmpty as NE
+import           FrontendIR         (Axis (..), Expr (..), FrontendError (..),
+                                     IxExpr (..), Program (..), Stmt (..))
+import           ISL                (AstExpression (..), AstOp (..),
+                                     AstTree (..), IslError (..))
+import           Polyhedral         (ScheduleOptimization (..))
+import           Shoto              (CompileError (..), compile)
 import           Test.Hspec
 
 spec :: Spec
@@ -17,7 +18,8 @@ spec = do
             let front =
                     Program
                         { axes =
-                            [Axis{iter = "i", extent = "N"}]
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -42,7 +44,8 @@ spec = do
             let invalid =
                     Program
                         { axes =
-                            [Axis{iter = "i", extent = "N"}]
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -58,7 +61,8 @@ spec = do
             let front =
                     Program
                         { axes =
-                            [Axis{iter = "i", extent = "N"}]
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -80,7 +84,8 @@ spec = do
             let front =
                     Program
                         { axes =
-                            [Axis{iter = "i", extent = "N"}]
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"

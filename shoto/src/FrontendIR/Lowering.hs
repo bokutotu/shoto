@@ -1,23 +1,26 @@
 module FrontendIR.Lowering (
+    CheckedProgram,
+    checkProgram,
     lowerToRaw,
 ) where
 
-import           Data.List        (intercalate)
-import qualified Data.Set         as Set
-import           FrontendIR.Types (Axis (..), Expr (..), FrontendError (..),
-                                   IterName, IxExpr (..), ParamName,
-                                   Program (..), Stmt (..), TensorName,
-                                   iterNameToString, paramNameToString,
-                                   tensorNameToString)
-import           Polyhedral.Parse (RawPolyhedralModel (..))
+import           Data.List          (intercalate)
+import qualified Data.List.NonEmpty as NE
+import qualified Data.Set           as Set
+import           FrontendIR.Types   (Axis (..), Expr (..), FrontendError (..),
+                                     IterName, IxExpr (..), ParamName,
+                                     Program (..), Stmt (..), TensorName,
+                                     iterNameToString, paramNameToString,
+                                     tensorNameToString)
+import           Polyhedral.Parse   (RawPolyhedralModel (..))
 
-lowerToRaw :: Program -> Either FrontendError RawPolyhedralModel
-lowerToRaw p@Program{axes = axisList, stmt = statement} = do
-    validateProgram p
-    let params = extent <$> axisList
-    let iters = iter <$> axisList
-    pure
-        RawPolyhedralModel
+newtype CheckedProgram = UnsafeMkCheckedProgram Program
+
+lowerToRaw :: CheckedProgram -> RawPolyhedralModel
+lowerToRaw (UnsafeMkCheckedProgram Program{axes = axisList, stmt = statement}) =
+    let params = extent <$> NE.toList axisList
+        iters = iter <$> NE.toList axisList
+     in RawPolyhedralModel
             { context = mkContext params
             , domain = mkDomain params iters
             , programOrder = mkProgramOrder params iters
@@ -28,17 +31,17 @@ lowerToRaw p@Program{axes = axisList, stmt = statement} = do
             , reductionWrite = "{ }"
             }
 
-validateProgram :: Program -> Either FrontendError ()
-validateProgram Program{axes = axisList, stmt = statement} = do
-    if null axisList then Left ErrNoAxis else Right ()
-    maybe (Right ()) (Left . ErrDuplicateIter) (firstDuplicate (iter <$> axisList))
-    maybe (Right ()) (Left . ErrDuplicateParam) (firstDuplicate (extent <$> axisList))
-    let expected = iter <$> axisList
+checkProgram :: Program -> Either FrontendError CheckedProgram
+checkProgram p@Program{axes = axisList, stmt = statement} = do
+    maybe (Right ()) (Left . ErrDuplicateIter) (firstDuplicate (iter <$> NE.toList axisList))
+    maybe (Right ()) (Left . ErrDuplicateParam) (firstDuplicate (extent <$> NE.toList axisList))
+    let expected = iter <$> NE.toList axisList
     let actualStore = ixExprName <$> outputIndex statement
     if actualStore == expected
         then Right ()
         else Left $ ErrStoreIndexMismatch expected actualStore
     validateExpr expected (rhs statement)
+    pure (UnsafeMkCheckedProgram p)
 
 validateExpr :: [IterName] -> Expr -> Either FrontendError ()
 validateExpr _ (EConst _) = Right ()

@@ -13,7 +13,8 @@ module FrontendIR.Types (
     FrontendError (..),
 ) where
 
-import           Data.String (IsString (fromString))
+import           Data.List.NonEmpty (NonEmpty)
+import           Data.String        (IsString (fromString))
 
 newtype IterName = IterName String
     deriving (Eq, Ord, Show)
@@ -66,14 +67,13 @@ data Stmt = Stmt
     deriving (Eq, Show)
 
 data Program = Program
-    { axes :: [Axis]
+    { axes :: NonEmpty Axis
     , stmt :: Stmt
     }
     deriving (Eq, Show)
 
 data FrontendError
-    = ErrNoAxis
-    | ErrDuplicateIter IterName
+    = ErrDuplicateIter IterName
     | ErrDuplicateParam ParamName
     | ErrStoreIndexMismatch [IterName] [IterName]
     | ErrLoadIndexMismatch TensorName [IterName] [IterName]

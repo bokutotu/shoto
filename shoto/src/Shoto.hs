@@ -6,7 +6,8 @@ module Shoto (
 
 import           Control.Monad.Except   (MonadError (throwError), runExceptT)
 import           Control.Monad.IO.Class (MonadIO (liftIO))
-import           FrontendIR             (FrontendError, Program, lowerToRaw)
+import           FrontendIR             (FrontendError, Program, checkProgram,
+                                         lowerToRaw)
 import           ISL                    (AstTree, IslError, runISL)
 import           Polyhedral             (ScheduleOptimization, synthesize)
 
@@ -21,7 +22,8 @@ compileM ::
     Program ->
     m AstTree
 compileM optimizations program = do
-    raw <- either (throwError . CompileFrontendError) pure (lowerToRaw program)
+    checked <- either (throwError . CompileFrontendError) pure (checkProgram program)
+    let raw = lowerToRaw checked
     islResult <- liftIO $ runISL (synthesize optimizations raw)
     either (throwError . CompileIslError) pure islResult
 
