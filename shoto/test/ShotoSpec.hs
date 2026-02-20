@@ -2,7 +2,8 @@
 
 module ShotoSpec (spec) where
 
-import           FrontendIR (FrontendError (..), axis, load, program, store)
+import           FrontendIR (Axis (..), Expr (..), FrontendError (..),
+                             IxExpr (..), Program (..), Stmt (..))
 import           ISL        (AstExpression (..), AstOp (..), AstTree (..),
                              IslError (..))
 import           Polyhedral (ScheduleOptimization (..))
@@ -14,9 +15,16 @@ spec = do
     describe "Shoto compile" $ do
         it "compiles a simple 1D program to AST" $ do
             let front =
-                    program
-                        [axis "i" "N"]
-                        (store "A" ["i"] (load "B" ["i"]))
+                    Program
+                        { axes =
+                            [Axis{iter = "i", extent = "N"}]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "A"
+                                , outputIndex = [IxVar "i"]
+                                , rhs = ELoad "B" [IxVar "i"]
+                                }
+                        }
 
                 expectedAst =
                     AstFor
@@ -32,18 +40,32 @@ spec = do
 
         it "returns Frontend errors as CompileFrontendError" $ do
             let invalid =
-                    program
-                        [axis "i" "N"]
-                        (store "A" ["j"] (load "B" ["i"]))
+                    Program
+                        { axes =
+                            [Axis{iter = "i", extent = "N"}]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "A"
+                                , outputIndex = [IxVar "j"]
+                                , rhs = ELoad "B" [IxVar "i"]
+                                }
+                        }
 
             result <- compile [] invalid
             result `shouldBe` Left (CompileFrontendError (ErrStoreIndexMismatch ["i"] ["j"]))
 
         it "returns ISL errors as CompileIslError" $ do
             let front =
-                    program
-                        [axis "i" "N"]
-                        (store "A" ["i"] (load "B" ["i"]))
+                    Program
+                        { axes =
+                            [Axis{iter = "i", extent = "N"}]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "A"
+                                , outputIndex = [IxVar "i"]
+                                , rhs = ELoad "B" [IxVar "i"]
+                                }
+                        }
 
             result <- compile [Tile []] front
 
@@ -56,9 +78,16 @@ spec = do
 
         it "keeps ISL error payload" $ do
             let front =
-                    program
-                        [axis "i" "N"]
-                        (store "A" ["i"] (load "B" ["i"]))
+                    Program
+                        { axes =
+                            [Axis{iter = "i", extent = "N"}]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "A"
+                                , outputIndex = [IxVar "i"]
+                                , rhs = ELoad "B" [IxVar "i"]
+                                }
+                        }
 
             result <- compile [Tile []] front
 

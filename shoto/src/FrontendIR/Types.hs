@@ -11,14 +11,6 @@ module FrontendIR.Types (
     Stmt (..),
     Program (..),
     FrontendError (..),
-    axis,
-    ixVar,
-    iconst,
-    load,
-    store,
-    program,
-    (.+.),
-    (.*.),
 ) where
 
 import           Data.String (IsString (fromString))
@@ -86,44 +78,3 @@ data FrontendError
     | ErrStoreIndexMismatch [IterName] [IterName]
     | ErrLoadIndexMismatch TensorName [IterName] [IterName]
     deriving (Eq, Show)
-
-axis :: IterName -> ParamName -> Axis
-axis iter extent =
-    Axis
-        { iter = iter
-        , extent = extent
-        }
-
-ixVar :: IterName -> IxExpr
-ixVar = IxVar
-
-iconst :: Int -> Expr
-iconst = EConst
-
-load :: TensorName -> [IterName] -> Expr
-load tensor indices = ELoad tensor (IxVar <$> indices)
-
-store :: TensorName -> [IterName] -> Expr -> Stmt
-store tensor indices value =
-    Stmt
-        { outputTensor = tensor
-        , outputIndex = IxVar <$> indices
-        , rhs = value
-        }
-
-program :: [Axis] -> Stmt -> Program
-program axes stmt =
-    Program
-        { axes = axes
-        , stmt = stmt
-        }
-
-infixl 6 .+.
-
-(.+.) :: Expr -> Expr -> Expr
-(.+.) = EAdd
-
-infixl 7 .*.
-
-(.*.) :: Expr -> Expr -> Expr
-(.*.) = EMul
