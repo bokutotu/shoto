@@ -5,7 +5,7 @@ module FrontendIRSpec (spec) where
 import qualified Data.List.NonEmpty as NE
 import           FrontendIR         (Axis (..), Expr (..), FrontendError (..),
                                      IxExpr (..), Program (..), Stmt (..),
-                                     checkProgram, lowerToRaw)
+                                     TensorDecl (..), checkProgram, lowerToRaw)
 import           Polyhedral         (RawPolyhedralModel (..))
 import           Test.Hspec
 
@@ -19,6 +19,12 @@ spec = do
                             NE.fromList
                                 [ Axis{iter = "i", extent = "N"}
                                 , Axis{iter = "j", extent = "M"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "B", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
                                 ]
                         , stmt =
                             Stmt
@@ -51,6 +57,9 @@ spec = do
                         { axes =
                             NE.fromList
                                 [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [TensorDecl{tensor = "A", shape = ["N"]}]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -81,6 +90,11 @@ spec = do
                                 [ Axis{iter = "i", extent = "N"}
                                 , Axis{iter = "j", extent = "M"}
                                 ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "C"
@@ -99,6 +113,11 @@ spec = do
                                 [ Axis{iter = "i", extent = "N"}
                                 , Axis{iter = "i", extent = "M"}
                                 ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "C"
@@ -108,3 +127,133 @@ spec = do
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrDuplicateIter "i")
+
+        it "fails when duplicate tensor declarations exist" $ do
+            let invalid =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N"]}
+                                , TensorDecl{tensor = "A", shape = ["N"]}
+                                ]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "A"
+                                , outputIndex = [IxVar "i"]
+                                , rhs = EConst 0
+                                }
+                        }
+
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrDuplicateTensor "A")
+
+        it "fails when loading from an undeclared tensor" $ do
+            let invalid =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [TensorDecl{tensor = "C", shape = ["N", "M"]}]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "C"
+                                , outputIndex = [IxVar "i", IxVar "j"]
+                                , rhs = ELoad "A" [IxVar "i", IxVar "j"]
+                                }
+                        }
+
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUndeclaredTensor "A")
+
+        it "fails when storing to an undeclared tensor" $ do
+            let invalid =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [TensorDecl{tensor = "A", shape = ["N"]}]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "C"
+                                , outputIndex = [IxVar "i"]
+                                , rhs = ELoad "A" [IxVar "i"]
+                                }
+                        }
+
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUndeclaredTensor "C")
+
+        it "fails when load rank does not match tensor rank" $ do
+            let invalid =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
+                                ]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "C"
+                                , outputIndex = [IxVar "i", IxVar "j"]
+                                , rhs = ELoad "A" [IxVar "i"]
+                                }
+                        }
+
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrTensorRankMismatch "A" 2 1)
+
+        it "fails when store rank does not match tensor rank" $ do
+            let invalid =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "C", shape = ["N"]}
+                                ]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "C"
+                                , outputIndex = [IxVar "i", IxVar "j"]
+                                , rhs = ELoad "A" [IxVar "i", IxVar "j"]
+                                }
+                        }
+
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrTensorRankMismatch "C" 1 2)
+
+        it "fails when tensor shape uses undeclared axis parameter" $ do
+            let invalid =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "K"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
+                                ]
+                        , stmt =
+                            Stmt
+                                { outputTensor = "C"
+                                , outputIndex = [IxVar "i", IxVar "j"]
+                                , rhs = EConst 0
+                                }
+                        }
+
+            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUnknownTensorShapeParam "A" "K")

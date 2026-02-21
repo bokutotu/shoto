@@ -17,6 +17,7 @@ Integer Set Library (ISL) のHaskellバインディング。多面体解析の�
 
 - **GHC2024**: 最新のHaskell言語拡張セットを使用
 - **Leading comma**: カンマ先頭スタイル（差分が見やすい）
+- **OverloadedRecordDot**: 新規/編集するHaskellコードでは、レコードフィールドアクセスにドット構文（`x.field`）を優先して使う
 - **4スペースインデント**
 
 ## 前提
@@ -45,6 +46,13 @@ hlint .
 ```bash
 ./format.sh
 ```
+
+## FrontendIR テンソル規約
+
+- `Program` は `tensors :: NonEmpty TensorDecl` でテンソル宣言を必須とする。
+- テンソル形状はシンボリックな `ParamName` の配列で、ランクは `length shape`。
+- 検証境界は `checkProgram`（重複、未宣言テンソル、ランク不一致、未知 shape パラメータ）。
+- `lowerToRaw` は検証済みプログラムを lower するだけで、検証は行わない。
 
 ## ドキュメント更新
 

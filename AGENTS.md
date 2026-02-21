@@ -17,11 +17,23 @@ Haskell bindings for Integer Set Library (ISL). It provides the mathematical fou
 
 - **GHC2024**: Use the latest Haskell language extension set
 - **Leading comma**: Leading-comma style (easier to review diffs)
+- **OverloadedRecordDot**: Prefer dot syntax for record field access (`x.field`) in new/edited Haskell code
 - **4-space indentation**
 
 ## Prerequisites
 
 Run inside the `nix develop` environment. `lefthook` automatically runs formatting and tests on commit.
+
+## Codex Sandbox Notes
+
+- In Codex sandbox runs, default Cabal paths under `~/.cache/cabal` and `~/.local/state/cabal` may be read-only.
+- For build/test commands in Codex, use workspace-local cache/store paths:
+
+```bash
+XDG_CACHE_HOME=$PWD/.cache CABAL_DIR=$PWD/.cabal cabal --store-dir=$PWD/.cabal/store test all
+```
+
+- Replace `test all` with `build all` or other subcommands as needed.
 
 ## Test
 
@@ -45,6 +57,13 @@ Try automatic fixes:
 ```bash
 ./format.sh
 ```
+
+## FrontendIR Tensor Rules
+
+- `Program` must declare tensors explicitly via `tensors :: NonEmpty TensorDecl`.
+- Tensor shape is symbolic (`[ParamName]`), and rank is `length shape`.
+- `checkProgram` is the validation boundary (duplicates, undeclared tensors, rank mismatch, unknown shape params).
+- `lowerToRaw` only lowers a checked program and does not perform validation.
 
 # ISL Haskell Bindings
 

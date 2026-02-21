@@ -4,7 +4,8 @@ module ShotoSpec (spec) where
 
 import qualified Data.List.NonEmpty as NE
 import           FrontendIR         (Axis (..), Expr (..), FrontendError (..),
-                                     IxExpr (..), Program (..), Stmt (..))
+                                     IxExpr (..), Program (..), Stmt (..),
+                                     TensorDecl (..))
 import           ISL                (AstExpression (..), AstOp (..),
                                      AstTree (..), IslError (..))
 import           Polyhedral         (ScheduleOptimization (..))
@@ -20,6 +21,11 @@ spec = do
                         { axes =
                             NE.fromList
                                 [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N"]}
+                                , TensorDecl{tensor = "B", shape = ["N"]}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -46,6 +52,11 @@ spec = do
                         { axes =
                             NE.fromList
                                 [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N"]}
+                                , TensorDecl{tensor = "B", shape = ["N"]}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -63,6 +74,11 @@ spec = do
                         { axes =
                             NE.fromList
                                 [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N"]}
+                                , TensorDecl{tensor = "B", shape = ["N"]}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"
@@ -86,6 +102,11 @@ spec = do
                         { axes =
                             NE.fromList
                                 [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N"]}
+                                , TensorDecl{tensor = "B", shape = ["N"]}
+                                ]
                         , stmt =
                             Stmt
                                 { outputTensor = "A"

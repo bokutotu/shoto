@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module FrontendIR.Lowering (
     CheckedProgram,
     checkProgram,
@@ -6,25 +8,26 @@ module FrontendIR.Lowering (
 
 import           Data.List          (intercalate)
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Strict    as Map
 import qualified Data.Set           as Set
 import           FrontendIR.Types   (Axis (..), Expr (..), FrontendError (..),
                                      IterName, IxExpr (..), ParamName,
-                                     Program (..), Stmt (..), TensorName,
-                                     iterNameToString, paramNameToString,
-                                     tensorNameToString)
+                                     Program (..), Stmt (..), TensorDecl (..),
+                                     TensorName, iterNameToString,
+                                     paramNameToString, tensorNameToString)
 import           Polyhedral.Parse   (RawPolyhedralModel (..))
 
 newtype CheckedProgram = UnsafeMkCheckedProgram Program
 
 lowerToRaw :: CheckedProgram -> RawPolyhedralModel
 lowerToRaw (UnsafeMkCheckedProgram Program{axes = axisList, stmt = statement}) =
-    let params = extent <$> NE.toList axisList
-        iters = iter <$> NE.toList axisList
+    let params = (.extent) <$> NE.toList axisList
+        iters = (.iter) <$> NE.toList axisList
      in RawPolyhedralModel
             { context = mkContext params
             , domain = mkDomain params iters
             , programOrder = mkProgramOrder params iters
-            , readAccess = mkReadAccess params iters (collectLoads (rhs statement))
+            , readAccess = mkReadAccess params iters (collectLoads statement.rhs)
             , writeAccess = mkWriteAccess params iters statement
             , reductionDomain = "{ }"
             , reductionRead = "{ }"
@@ -32,27 +35,68 @@ lowerToRaw (UnsafeMkCheckedProgram Program{axes = axisList, stmt = statement}) =
             }
 
 checkProgram :: Program -> Either FrontendError CheckedProgram
-checkProgram p@Program{axes = axisList, stmt = statement} = do
-    maybe (Right ()) (Left . ErrDuplicateIter) (firstDuplicate (iter <$> NE.toList axisList))
-    maybe (Right ()) (Left . ErrDuplicateParam) (firstDuplicate (extent <$> NE.toList axisList))
-    let expected = iter <$> NE.toList axisList
-    let actualStore = ixExprName <$> outputIndex statement
-    if actualStore == expected
+checkProgram p@Program{axes = axisList, tensors = tensorDecls, stmt = statement} = do
+    let axesList = NE.toList axisList
+    let tensorList = NE.toList tensorDecls
+    let expectedIters = (.iter) <$> axesList
+    let knownShapeParams = Set.fromList ((.extent) <$> axesList)
+    let tensorRanks = Map.fromList ((\decl -> (decl.tensor, length decl.shape)) <$> tensorList)
+    maybe (Right ()) (Left . ErrDuplicateIter) (firstDuplicate ((.iter) <$> axesList))
+    maybe (Right ()) (Left . ErrDuplicateParam) (firstDuplicate ((.extent) <$> axesList))
+    maybe (Right ()) (Left . ErrDuplicateTensor) (firstDuplicate ((.tensor) <$> tensorList))
+    ensureShapeParamsKnown knownShapeParams tensorList
+    let actualStore = ixExprName <$> statement.outputIndex
+    if actualStore == expectedIters
         then Right ()
-        else Left $ ErrStoreIndexMismatch expected actualStore
-    validateExpr expected (rhs statement)
+        else Left $ ErrStoreIndexMismatch expectedIters actualStore
+    ensureTensorDeclared tensorRanks statement.outputTensor
+    ensureRankMatches tensorRanks statement.outputTensor statement.outputIndex
+    checkExpr expectedIters tensorRanks statement.rhs
     pure (UnsafeMkCheckedProgram p)
-
-validateExpr :: [IterName] -> Expr -> Either FrontendError ()
-validateExpr _ (EConst _) = Right ()
-validateExpr expected (EAdd lhs rhs) = validateExpr expected lhs >> validateExpr expected rhs
-validateExpr expected (EMul lhs rhs) = validateExpr expected lhs >> validateExpr expected rhs
-validateExpr expected (ELoad tensor indices) =
-    if actual == expected
-        then Right ()
-        else Left $ ErrLoadIndexMismatch tensor expected actual
   where
-    actual = ixExprName <$> indices
+    ensureShapeParamsKnown :: Set.Set ParamName -> [TensorDecl] -> Either FrontendError ()
+    ensureShapeParamsKnown _ [] = Right ()
+    ensureShapeParamsKnown knownParams (decl : rest) = do
+        ensureShapeParamsKnown' decl.tensor knownParams decl.shape
+        ensureShapeParamsKnown knownParams rest
+
+    ensureShapeParamsKnown' :: TensorName -> Set.Set ParamName -> [ParamName] -> Either FrontendError ()
+    ensureShapeParamsKnown' _ _ [] = Right ()
+    ensureShapeParamsKnown' tensorName knownParams (param : params)
+        | Set.member param knownParams = ensureShapeParamsKnown' tensorName knownParams params
+        | otherwise = Left $ ErrUnknownTensorShapeParam tensorName param
+
+    ensureTensorDeclared :: Map.Map TensorName Int -> TensorName -> Either FrontendError ()
+    ensureTensorDeclared tensorRankMap tensorName =
+        case Map.lookup tensorName tensorRankMap of
+            Nothing -> Left $ ErrUndeclaredTensor tensorName
+            Just _ -> Right ()
+
+    ensureRankMatches :: Map.Map TensorName Int -> TensorName -> [IxExpr] -> Either FrontendError ()
+    ensureRankMatches tensorRankMap tensorName indices =
+        case Map.lookup tensorName tensorRankMap of
+            Nothing -> Left $ ErrUndeclaredTensor tensorName
+            Just expectedRank ->
+                if actualRank == expectedRank
+                    then Right ()
+                    else Left $ ErrTensorRankMismatch tensorName expectedRank actualRank
+      where
+        actualRank = length indices
+
+    checkExpr :: [IterName] -> Map.Map TensorName Int -> Expr -> Either FrontendError ()
+    checkExpr _ _ (EConst _) = Right ()
+    checkExpr expected tensorRankMap (EAdd lhs rhs) =
+        checkExpr expected tensorRankMap lhs >> checkExpr expected tensorRankMap rhs
+    checkExpr expected tensorRankMap (EMul lhs rhs) =
+        checkExpr expected tensorRankMap lhs >> checkExpr expected tensorRankMap rhs
+    checkExpr expected tensorRankMap (ELoad tensorName indices) = do
+        ensureTensorDeclared tensorRankMap tensorName
+        ensureRankMatches tensorRankMap tensorName indices
+        if actual == expected
+            then Right ()
+            else Left $ ErrLoadIndexMismatch tensorName expected actual
+      where
+        actual = ixExprName <$> indices
 
 firstDuplicate :: (Ord a) => [a] -> Maybe a
 firstDuplicate = go Set.empty
@@ -96,7 +140,7 @@ mkWriteAccess params iters statement =
         "{ "
             <> statementRef iters
             <> " -> "
-            <> tensorRef (outputTensor statement) (outputIndex statement)
+            <> tensorRef statement.outputTensor statement.outputIndex
             <> " }"
 
 collectLoads :: Expr -> [(TensorName, [IxExpr])]

@@ -6,6 +6,7 @@ module FrontendIR.Types (
     paramNameToString,
     tensorNameToString,
     Axis (..),
+    TensorDecl (..),
     IxExpr (..),
     Expr (..),
     Stmt (..),
@@ -49,6 +50,12 @@ data Axis = Axis
     }
     deriving (Eq, Show)
 
+data TensorDecl = TensorDecl
+    { tensor :: TensorName
+    , shape :: [ParamName]
+    }
+    deriving (Eq, Show)
+
 newtype IxExpr = IxVar IterName
     deriving (Eq, Show)
 
@@ -68,6 +75,7 @@ data Stmt = Stmt
 
 data Program = Program
     { axes :: NonEmpty Axis
+    , tensors :: NonEmpty TensorDecl
     , stmt :: Stmt
     }
     deriving (Eq, Show)
@@ -75,6 +83,10 @@ data Program = Program
 data FrontendError
     = ErrDuplicateIter IterName
     | ErrDuplicateParam ParamName
+    | ErrDuplicateTensor TensorName
+    | ErrUndeclaredTensor TensorName
+    | ErrTensorRankMismatch TensorName Int Int
+    | ErrUnknownTensorShapeParam TensorName ParamName
     | ErrStoreIndexMismatch [IterName] [IterName]
     | ErrLoadIndexMismatch TensorName [IterName] [IterName]
     deriving (Eq, Show)
