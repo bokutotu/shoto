@@ -9,6 +9,7 @@ module FrontendIR.Types (
     TensorDecl (..),
     IxExpr (..),
     Expr (..),
+    ReductionOp (..),
     Stmt (..),
     Program (..),
     FrontendError (..),
@@ -66,11 +67,22 @@ data Expr
     | EMul Expr Expr
     deriving (Eq, Show)
 
-data Stmt = Stmt
-    { outputTensor :: TensorName
-    , outputIndex :: [IxExpr]
-    , rhs :: Expr
-    }
+data ReductionOp
+    = ReduceAdd
+    deriving (Eq, Show)
+
+data Stmt
+    = Assign
+        { outputTensor :: TensorName
+        , outputIndex :: [IxExpr]
+        , rhs :: Expr
+        }
+    | Reduction
+        { reductionOp :: ReductionOp
+        , outputTensor :: TensorName
+        , outputIndex :: [IxExpr]
+        , rhs :: Expr
+        }
     deriving (Eq, Show)
 
 data Program = Program
@@ -87,6 +99,9 @@ data FrontendError
     | ErrUndeclaredTensor TensorName
     | ErrTensorRankMismatch TensorName Int Int
     | ErrUnknownTensorShapeParam TensorName ParamName
+    | ErrUnknownIndexIter IterName
     | ErrStoreIndexMismatch [IterName] [IterName]
+    | ErrReductionOutputNotSubsequence [IterName] [IterName]
+    | ErrReductionRequiresReducedAxis
     | ErrLoadIndexMismatch TensorName [IterName] [IterName]
     deriving (Eq, Show)

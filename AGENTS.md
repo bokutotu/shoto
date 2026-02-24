@@ -24,17 +24,6 @@ Haskell bindings for Integer Set Library (ISL). It provides the mathematical fou
 
 Run inside the `nix develop` environment. `lefthook` automatically runs formatting and tests on commit.
 
-## Codex Sandbox Notes
-
-- In Codex sandbox runs, default Cabal paths under `~/.cache/cabal` and `~/.local/state/cabal` may be read-only.
-- For build/test commands in Codex, use workspace-local cache/store paths:
-
-```bash
-XDG_CACHE_HOME=$PWD/.cache CABAL_DIR=$PWD/.cabal cabal --store-dir=$PWD/.cabal/store test all
-```
-
-- Replace `test all` with `build all` or other subcommands as needed.
-
 ## Test
 
 ```bash

@@ -27,7 +27,7 @@ spec = do
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
                         , stmt =
-                            Stmt
+                            Assign
                                 { outputTensor = "A"
                                 , outputIndex = [IxVar "i"]
                                 , rhs = ELoad "B" [IxVar "i"]
@@ -58,7 +58,7 @@ spec = do
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
                         , stmt =
-                            Stmt
+                            Assign
                                 { outputTensor = "A"
                                 , outputIndex = [IxVar "j"]
                                 , rhs = ELoad "B" [IxVar "i"]
@@ -80,7 +80,7 @@ spec = do
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
                         , stmt =
-                            Stmt
+                            Assign
                                 { outputTensor = "A"
                                 , outputIndex = [IxVar "i"]
                                 , rhs = ELoad "B" [IxVar "i"]
@@ -108,7 +108,7 @@ spec = do
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
                         , stmt =
-                            Stmt
+                            Assign
                                 { outputTensor = "A"
                                 , outputIndex = [IxVar "i"]
                                 , rhs = ELoad "B" [IxVar "i"]
