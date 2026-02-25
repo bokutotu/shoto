@@ -88,7 +88,7 @@ data Stmt
 data Program = Program
     { axes :: NonEmpty Axis
     , tensors :: NonEmpty TensorDecl
-    , stmt :: Stmt
+    , stmts :: NonEmpty Stmt
     }
     deriving (Eq, Show)
 
@@ -103,5 +103,6 @@ data FrontendError
     | ErrStoreIndexMismatch [IterName] [IterName]
     | ErrReductionOutputNotSubsequence [IterName] [IterName]
     | ErrReductionRequiresReducedAxis
+    | ErrMultiStmtRequiresSingleReductionAxis [IterName]
     | ErrLoadIndexMismatch TensorName [IterName] [IterName]
     deriving (Eq, Show)

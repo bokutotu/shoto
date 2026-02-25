@@ -27,22 +27,24 @@ spec = do
                                 , TensorDecl{tensor = "B", shape = ["N", "M"]}
                                 , TensorDecl{tensor = "C", shape = ["N", "M"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "i", IxVar "j"]
-                                , rhs =
-                                    EAdd
-                                        (ELoad "A" [IxVar "i", IxVar "j"])
-                                        (ELoad "B" [IxVar "i", IxVar "j"])
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs =
+                                        EAdd
+                                            (ELoad "A" [IxVar "i", IxVar "j"])
+                                            (ELoad "B" [IxVar "i", IxVar "j"])
+                                    }
+                                ]
                         }
 
                 expected =
                     RawPolyhedralModel
                         { context = "[N,M] -> { : 0 <= N and 0 <= M }"
                         , domain = "[N,M] -> { S[i,j] : 0 <= i < N and 0 <= j < M }"
-                        , programOrder = "[N,M] -> { S[i,j] -> [i,j] }"
+                        , programOrder = "[N,M] -> { S[i,j] -> [0,i,j] }"
                         , readAccess = "[N,M] -> { S[i,j] -> A[i,j]; S[i,j] -> B[i,j] }"
                         , writeAccess = "[N,M] -> { S[i,j] -> C[i,j] }"
                         , reductionDomain = "{ }"
@@ -61,19 +63,21 @@ spec = do
                         , tensors =
                             NE.fromList
                                 [TensorDecl{tensor = "A", shape = ["N"]}]
-                        , stmt =
-                            Assign
-                                { outputTensor = "A"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = EConst 42
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "A"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = EConst 42
+                                    }
+                                ]
                         }
 
                 expected =
                     RawPolyhedralModel
                         { context = "[N] -> { : 0 <= N }"
                         , domain = "[N] -> { S[i] : 0 <= i < N }"
-                        , programOrder = "[N] -> { S[i] -> [i] }"
+                        , programOrder = "[N] -> { S[i] -> [0,i] }"
                         , readAccess = "{ }"
                         , writeAccess = "[N] -> { S[i] -> A[i] }"
                         , reductionDomain = "{ }"
@@ -96,12 +100,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N", "M"]}
                                 , TensorDecl{tensor = "C", shape = ["N", "M"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "j", IxVar "i"]
-                                , rhs = ELoad "A" [IxVar "i", IxVar "j"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "j", IxVar "i"]
+                                    , rhs = ELoad "A" [IxVar "i", IxVar "j"]
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrStoreIndexMismatch ["i", "j"] ["j", "i"])
@@ -119,12 +125,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N", "M"]}
                                 , TensorDecl{tensor = "C", shape = ["N", "M"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "i", IxVar "i"]
-                                , rhs = ELoad "A" [IxVar "i", IxVar "i"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "i"]
+                                    , rhs = ELoad "A" [IxVar "i", IxVar "i"]
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrDuplicateIter "i")
@@ -140,12 +148,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N"]}
                                 , TensorDecl{tensor = "A", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "A"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = EConst 0
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "A"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = EConst 0
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrDuplicateTensor "A")
@@ -161,12 +171,14 @@ spec = do
                         , tensors =
                             NE.fromList
                                 [TensorDecl{tensor = "C", shape = ["N", "M"]}]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "i", IxVar "j"]
-                                , rhs = ELoad "A" [IxVar "i", IxVar "j"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = ELoad "A" [IxVar "i", IxVar "j"]
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUndeclaredTensor "A")
@@ -180,12 +192,14 @@ spec = do
                         , tensors =
                             NE.fromList
                                 [TensorDecl{tensor = "A", shape = ["N"]}]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = ELoad "A" [IxVar "i"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = ELoad "A" [IxVar "i"]
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUndeclaredTensor "C")
@@ -203,12 +217,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N", "M"]}
                                 , TensorDecl{tensor = "C", shape = ["N", "M"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "i", IxVar "j"]
-                                , rhs = ELoad "A" [IxVar "i"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = ELoad "A" [IxVar "i"]
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrTensorRankMismatch "A" 2 1)
@@ -226,12 +242,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N", "M"]}
                                 , TensorDecl{tensor = "C", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "i", IxVar "j"]
-                                , rhs = ELoad "A" [IxVar "i", IxVar "j"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = ELoad "A" [IxVar "i", IxVar "j"]
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrTensorRankMismatch "C" 1 2)
@@ -249,12 +267,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N", "K"]}
                                 , TensorDecl{tensor = "C", shape = ["N", "M"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "C"
-                                , outputIndex = [IxVar "i", IxVar "j"]
-                                , rhs = EConst 0
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = EConst 0
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUnknownTensorShapeParam "A" "K")
@@ -272,20 +292,22 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N", "K"]}
                                 , TensorDecl{tensor = "C", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Reduction
-                                { reductionOp = ReduceAdd
-                                , outputTensor = "C"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = ELoad "A" [IxVar "i", IxVar "k"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Reduction
+                                    { reductionOp = ReduceAdd
+                                    , outputTensor = "C"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = ELoad "A" [IxVar "i", IxVar "k"]
+                                    }
+                                ]
                         }
 
                 expected =
                     RawPolyhedralModel
                         { context = "[N,K] -> { : 0 <= N and 0 <= K }"
                         , domain = "[N,K] -> { S[i,k] : 0 <= i < N and 0 <= k < K }"
-                        , programOrder = "[N,K] -> { S[i,k] -> [i,k] }"
+                        , programOrder = "[N,K] -> { S[i,k] -> [0,i,k] }"
                         , readAccess = "[N,K] -> { S[i,k] -> A[i,k] }"
                         , writeAccess = "[N,K] -> { S[i,k] -> C[i] }"
                         , reductionDomain = "[N,K] -> { S[i,k] : 0 <= i < N and 0 <= k < K }"
@@ -307,13 +329,15 @@ spec = do
                         , tensors =
                             NE.fromList
                                 [TensorDecl{tensor = "C", shape = ["K", "N"]}]
-                        , stmt =
-                            Reduction
-                                { reductionOp = ReduceAdd
-                                , outputTensor = "C"
-                                , outputIndex = [IxVar "k", IxVar "i"]
-                                , rhs = EConst 0
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Reduction
+                                    { reductionOp = ReduceAdd
+                                    , outputTensor = "C"
+                                    , outputIndex = [IxVar "k", IxVar "i"]
+                                    , rhs = EConst 0
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid)
@@ -330,13 +354,15 @@ spec = do
                         , tensors =
                             NE.fromList
                                 [TensorDecl{tensor = "C", shape = ["N", "M"]}]
-                        , stmt =
-                            Reduction
-                                { reductionOp = ReduceAdd
-                                , outputTensor = "C"
-                                , outputIndex = [IxVar "i", IxVar "j"]
-                                , rhs = EConst 1
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Reduction
+                                    { reductionOp = ReduceAdd
+                                    , outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = EConst 1
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left ErrReductionRequiresReducedAxis
@@ -354,13 +380,226 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N", "K"]}
                                 , TensorDecl{tensor = "C", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Reduction
-                                { reductionOp = ReduceAdd
-                                , outputTensor = "C"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = ELoad "A" [IxVar "i", IxVar "j"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Reduction
+                                    { reductionOp = ReduceAdd
+                                    , outputTensor = "C"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = ELoad "A" [IxVar "i", IxVar "j"]
+                                    }
+                                ]
                         }
 
             fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUnknownIndexIter "j")
+
+        it "lowers fused gemm + add + relu with mixed reduction and point-wise statements" $ do
+            let front =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                , Axis{iter = "k", extent = "K"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "K"]}
+                                , TensorDecl{tensor = "B", shape = ["K", "M"]}
+                                , TensorDecl{tensor = "Bias", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "Y", shape = ["N", "M"]}
+                                ]
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = EConst 0
+                                    }
+                                , Reduction
+                                    { reductionOp = ReduceAdd
+                                    , outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs =
+                                        EMul
+                                            (ELoad "A" [IxVar "i", IxVar "k"])
+                                            (ELoad "B" [IxVar "k", IxVar "j"])
+                                    }
+                                , Assign
+                                    { outputTensor = "Y"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs =
+                                        EAdd
+                                            (ELoad "C" [IxVar "i", IxVar "j"])
+                                            (ELoad "Bias" [IxVar "i", IxVar "j"])
+                                    }
+                                ]
+                        }
+
+                expected =
+                    RawPolyhedralModel
+                        { context = "[N,M,K] -> { : 0 <= N and 0 <= M and 0 <= K }"
+                        , domain =
+                            "[N,M,K] -> { S0[i,j] : 0 <= i < N and 0 <= j < M; S1[i,j,k] : 0 <= i < N and 0 <= j < M and 0 <= k < K; S2[i,j] : 0 <= i < N and 0 <= j < M }"
+                        , programOrder =
+                            "[N,M,K] -> { S0[i,j] -> [0,i,j,0]; S1[i,j,k] -> [1,i,j,k]; S2[i,j] -> [2,i,j,0] }"
+                        , readAccess =
+                            "[N,M,K] -> { S1[i,j,k] -> A[i,k]; S1[i,j,k] -> B[k,j]; S2[i,j] -> C[i,j]; S2[i,j] -> Bias[i,j] }"
+                        , writeAccess =
+                            "[N,M,K] -> { S0[i,j] -> C[i,j]; S1[i,j,k] -> C[i,j]; S2[i,j] -> Y[i,j] }"
+                        , reductionDomain = "[N,M,K] -> { S1[i,j,k] : 0 <= i < N and 0 <= j < M and 0 <= k < K }"
+                        , reductionRead = "[N,M,K] -> { S1[i,j,k] -> C[i,j] }"
+                        , reductionWrite = "[N,M,K] -> { S1[i,j,k] -> C[i,j] }"
+                        }
+
+            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+
+        it "lowers 4D mixed reduction and non-reduction statements with stable stage order" $ do
+            let front =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "b", extent = "Batch"}
+                                , Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                , Axis{iter = "k", extent = "K"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["Batch", "N", "K"]}
+                                , TensorDecl{tensor = "W", shape = ["Batch", "K", "M"]}
+                                , TensorDecl{tensor = "Bias", shape = ["Batch", "N", "M"]}
+                                , TensorDecl{tensor = "Acc", shape = ["Batch", "N", "M"]}
+                                , TensorDecl{tensor = "Y", shape = ["Batch", "N", "M"]}
+                                ]
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "Acc"
+                                    , outputIndex = [IxVar "b", IxVar "i", IxVar "j"]
+                                    , rhs = EConst 0
+                                    }
+                                , Reduction
+                                    { reductionOp = ReduceAdd
+                                    , outputTensor = "Acc"
+                                    , outputIndex = [IxVar "b", IxVar "i", IxVar "j"]
+                                    , rhs =
+                                        EMul
+                                            (ELoad "A" [IxVar "b", IxVar "i", IxVar "k"])
+                                            (ELoad "W" [IxVar "b", IxVar "k", IxVar "j"])
+                                    }
+                                , Assign
+                                    { outputTensor = "Y"
+                                    , outputIndex = [IxVar "b", IxVar "i", IxVar "j"]
+                                    , rhs =
+                                        EAdd
+                                            (ELoad "Acc" [IxVar "b", IxVar "i", IxVar "j"])
+                                            (ELoad "Bias" [IxVar "b", IxVar "i", IxVar "j"])
+                                    }
+                                ]
+                        }
+
+                expected =
+                    RawPolyhedralModel
+                        { context = "[Batch,N,M,K] -> { : 0 <= Batch and 0 <= N and 0 <= M and 0 <= K }"
+                        , domain =
+                            "[Batch,N,M,K] -> { S0[b,i,j] : 0 <= b < Batch and 0 <= i < N and 0 <= j < M; S1[b,i,j,k] : 0 <= b < Batch and 0 <= i < N and 0 <= j < M and 0 <= k < K; S2[b,i,j] : 0 <= b < Batch and 0 <= i < N and 0 <= j < M }"
+                        , programOrder =
+                            "[Batch,N,M,K] -> { S0[b,i,j] -> [0,b,i,j,0]; S1[b,i,j,k] -> [1,b,i,j,k]; S2[b,i,j] -> [2,b,i,j,0] }"
+                        , readAccess =
+                            "[Batch,N,M,K] -> { S1[b,i,j,k] -> A[b,i,k]; S1[b,i,j,k] -> W[b,k,j]; S2[b,i,j] -> Acc[b,i,j]; S2[b,i,j] -> Bias[b,i,j] }"
+                        , writeAccess =
+                            "[Batch,N,M,K] -> { S0[b,i,j] -> Acc[b,i,j]; S1[b,i,j,k] -> Acc[b,i,j]; S2[b,i,j] -> Y[b,i,j] }"
+                        , reductionDomain =
+                            "[Batch,N,M,K] -> { S1[b,i,j,k] : 0 <= b < Batch and 0 <= i < N and 0 <= j < M and 0 <= k < K }"
+                        , reductionRead = "[Batch,N,M,K] -> { S1[b,i,j,k] -> Acc[b,i,j] }"
+                        , reductionWrite = "[Batch,N,M,K] -> { S1[b,i,j,k] -> Acc[b,i,j] }"
+                        }
+
+            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+
+        it "zero pads omitted axes in multi-statement stage-first order tuples" $ do
+            let front =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                , Axis{iter = "k", extent = "K"}
+                                , Axis{iter = "l", extent = "L"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "B", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
+                                , TensorDecl{tensor = "D", shape = ["N", "M"]}
+                                ]
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs =
+                                        EAdd
+                                            (ELoad "A" [IxVar "i", IxVar "j"])
+                                            (ELoad "B" [IxVar "i", IxVar "j"])
+                                    }
+                                , Assign
+                                    { outputTensor = "D"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = ELoad "C" [IxVar "i", IxVar "j"]
+                                    }
+                                ]
+                        }
+
+                expected =
+                    RawPolyhedralModel
+                        { context = "[N,M,K,L] -> { : 0 <= N and 0 <= M and 0 <= K and 0 <= L }"
+                        , domain =
+                            "[N,M,K,L] -> { S0[i,j] : 0 <= i < N and 0 <= j < M; S1[i,j] : 0 <= i < N and 0 <= j < M }"
+                        , programOrder =
+                            "[N,M,K,L] -> { S0[i,j] -> [0,i,j,0,0]; S1[i,j] -> [1,i,j,0,0] }"
+                        , readAccess = "[N,M,K,L] -> { S0[i,j] -> A[i,j]; S0[i,j] -> B[i,j]; S1[i,j] -> C[i,j] }"
+                        , writeAccess = "[N,M,K,L] -> { S0[i,j] -> C[i,j]; S1[i,j] -> D[i,j] }"
+                        , reductionDomain = "{ }"
+                        , reductionRead = "{ }"
+                        , reductionWrite = "{ }"
+                        }
+
+            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+
+        it "fails multi-statement lowering when reduction would need multiple reduced axes" $ do
+            let invalid =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [ Axis{iter = "i", extent = "N"}
+                                , Axis{iter = "j", extent = "M"}
+                                , Axis{iter = "k", extent = "K"}
+                                , Axis{iter = "l", extent = "L"}
+                                ]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N", "M", "K", "L"]}
+                                , TensorDecl{tensor = "C", shape = ["N", "M"]}
+                                ]
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = EConst 0
+                                    }
+                                , Reduction
+                                    { reductionOp = ReduceAdd
+                                    , outputTensor = "C"
+                                    , outputIndex = [IxVar "i", IxVar "j"]
+                                    , rhs = ELoad "A" [IxVar "i", IxVar "j", IxVar "k", IxVar "l"]
+                                    }
+                                ]
+                        }
+
+            fmap lowerToRaw (checkProgram invalid)
+                `shouldBe` Left (ErrMultiStmtRequiresSingleReductionAxis ["k", "l"])

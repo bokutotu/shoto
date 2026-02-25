@@ -179,7 +179,7 @@ spec = do
                         , domain =
                             "[N,M,K] -> { S_init[i,j] : 0 <= i < N and 0 <= j < M; S_gemm[i,j,k] : 0 <= i < N and 0 <= j < M and 0 <= k < K; S_out[i,j] : 0 <= i < N and 0 <= j < M }"
                         , programOrder =
-                            "[N,M,K] -> { S_init[i,j] -> [i,j,0]; S_gemm[i,j,k] -> [i,j,k+1]; S_out[i,j] -> [i,j,K+1] }"
+                            "[N,M,K] -> { S_init[i,j] -> [0,i,j,0]; S_gemm[i,j,k] -> [1,i,j,k]; S_out[i,j] -> [2,i,j,0] }"
                         , readAccess =
                             "[N,M,K] -> { S_gemm[i,j,k] -> A[i,k]; S_gemm[i,j,k] -> B[k,j]; S_gemm[i,j,k] -> C[i,j]; S_out[i,j] -> C[i,j]; S_out[i,j] -> Bias[i,j] }"
                         , writeAccess = "[N,M,K] -> { S_init[i,j] -> C[i,j]; S_gemm[i,j,k] -> C[i,j]; S_out[i,j] -> Y[i,j] }"

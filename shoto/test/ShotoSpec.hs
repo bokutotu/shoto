@@ -26,12 +26,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N"]}
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "A"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = ELoad "B" [IxVar "i"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "A"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = ELoad "B" [IxVar "i"]
+                                    }
+                                ]
                         }
 
                 expectedAst =
@@ -57,12 +59,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N"]}
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "A"
-                                , outputIndex = [IxVar "j"]
-                                , rhs = ELoad "B" [IxVar "i"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "A"
+                                    , outputIndex = [IxVar "j"]
+                                    , rhs = ELoad "B" [IxVar "i"]
+                                    }
+                                ]
                         }
 
             result <- compile [] invalid
@@ -79,12 +83,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N"]}
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "A"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = ELoad "B" [IxVar "i"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "A"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = ELoad "B" [IxVar "i"]
+                                    }
+                                ]
                         }
 
             result <- compile [Tile []] front
@@ -107,12 +113,14 @@ spec = do
                                 [ TensorDecl{tensor = "A", shape = ["N"]}
                                 , TensorDecl{tensor = "B", shape = ["N"]}
                                 ]
-                        , stmt =
-                            Assign
-                                { outputTensor = "A"
-                                , outputIndex = [IxVar "i"]
-                                , rhs = ELoad "B" [IxVar "i"]
-                                }
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "A"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = ELoad "B" [IxVar "i"]
+                                    }
+                                ]
                         }
 
             result <- compile [Tile []] front
