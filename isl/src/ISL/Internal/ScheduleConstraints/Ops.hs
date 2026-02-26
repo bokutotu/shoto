@@ -31,8 +31,9 @@ scheduleConstraintsSetValidity ::
 scheduleConstraintsSetValidity (ScheduleConstraints scFP) (UnionMap umFP) = do
     let mk = withForeignPtr scFP $ \scPtr ->
             withForeignPtr umFP $ \umPtr -> do
+                scCopy <- c_sched_constraints_copy scPtr
                 umCopy <- c_umap_copy umPtr
-                c_sched_constraints_set_validity scPtr umCopy
+                c_sched_constraints_set_validity scCopy umCopy
     manage c_sched_constraints_free "isl_schedule_constraints_set_validity" mk ScheduleConstraints
 
 -- | Set proximity constraints (hints for data locality)
@@ -41,8 +42,9 @@ scheduleConstraintsSetProximity ::
 scheduleConstraintsSetProximity (ScheduleConstraints scFP) (UnionMap umFP) = do
     let mk = withForeignPtr scFP $ \scPtr ->
             withForeignPtr umFP $ \umPtr -> do
+                scCopy <- c_sched_constraints_copy scPtr
                 umCopy <- c_umap_copy umPtr
-                c_sched_constraints_set_proximity scPtr umCopy
+                c_sched_constraints_set_proximity scCopy umCopy
     manage c_sched_constraints_free "isl_schedule_constraints_set_proximity" mk ScheduleConstraints
 
 -- | Set coincidence constraints (hints for parallelization)
@@ -51,8 +53,9 @@ scheduleConstraintsSetCoincidence ::
 scheduleConstraintsSetCoincidence (ScheduleConstraints scFP) (UnionMap umFP) = do
     let mk = withForeignPtr scFP $ \scPtr ->
             withForeignPtr umFP $ \umPtr -> do
+                scCopy <- c_sched_constraints_copy scPtr
                 umCopy <- c_umap_copy umPtr
-                c_sched_constraints_set_coincidence scPtr umCopy
+                c_sched_constraints_set_coincidence scCopy umCopy
     manage c_sched_constraints_free "isl_schedule_constraints_set_coincidence" mk ScheduleConstraints
 
 -- | Set context (parameter constraints) for scheduling
@@ -61,13 +64,15 @@ scheduleConstraintsSetContext ::
 scheduleConstraintsSetContext (ScheduleConstraints scFP) (Set setFP) = do
     let mk = withForeignPtr scFP $ \scPtr ->
             withForeignPtr setFP $ \setPtr -> do
+                scCopy <- c_sched_constraints_copy scPtr
                 setCopy <- c_set_copy setPtr
-                c_sched_constraints_set_context scPtr setCopy
+                c_sched_constraints_set_context scCopy setCopy
     manage c_sched_constraints_free "isl_schedule_constraints_set_context" mk ScheduleConstraints
 
 -- | Compute an optimal schedule from constraints
 scheduleConstraintsComputeSchedule :: ScheduleConstraints s -> ISL s (Schedule s)
 scheduleConstraintsComputeSchedule (ScheduleConstraints scFP) = do
     let mk = withForeignPtr scFP $ \scPtr -> do
-            c_sched_constraints_compute_schedule scPtr
+            scCopy <- c_sched_constraints_copy scPtr
+            c_sched_constraints_compute_schedule scCopy
     manage c_sched_free "isl_schedule_constraints_compute_schedule" mk Schedule

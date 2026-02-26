@@ -130,6 +130,7 @@ module ISL.Internal.FFI (
 
     -- * Schedule Constraints FFI
     c_sched_constraints_on_domain,
+    c_sched_constraints_copy,
     c_sched_constraints_set_validity,
     c_sched_constraints_set_proximity,
     c_sched_constraints_set_coincidence,
@@ -608,6 +609,9 @@ foreign import ccall "isl/schedule.h isl_schedule_plain_is_equal"
 -- Schedule Constraints Operations
 foreign import ccall "isl/schedule.h isl_schedule_constraints_on_domain"
     c_sched_constraints_on_domain :: RawUnionSet -> IO RawScheduleConstraints
+
+foreign import ccall "isl/schedule.h isl_schedule_constraints_copy"
+    c_sched_constraints_copy :: RawScheduleConstraints -> IO RawScheduleConstraints
 
 foreign import ccall "isl/schedule.h isl_schedule_constraints_set_validity"
     c_sched_constraints_set_validity ::

@@ -42,21 +42,18 @@ data IslError = IslError
     }
     deriving (Show, Eq)
 
-getCtx :: ISL s RawCtx
-getCtx = do
-    Env ctxFP <- askEnv
-    liftIO $ withForeignPtr ctxFP pure
-
 throwISL :: String -> ISL s a
 throwISL fnName = do
-    ctx <- getCtx
-    msgC <- liftIO $ c_ctx_last_error_msg ctx
-    fileC <- liftIO $ c_ctx_last_error_file ctx
-    lineC <- liftIO $ c_ctx_last_error_line ctx
+    Env ctxFP <- askEnv
+    (msg, file, line) <- liftIO $ withForeignPtr ctxFP $ \ctx -> do
+        msgC <- c_ctx_last_error_msg ctx
+        fileC <- c_ctx_last_error_file ctx
+        lineC <- c_ctx_last_error_line ctx
 
-    msg <- liftIO $ if msgC == nullPtr then pure Nothing else Just <$> peekCString msgC
-    file <- liftIO $ if fileC == nullPtr then pure Nothing else Just <$> peekCString fileC
-    let line = if lineC < 0 then Nothing else Just (fromIntegral lineC)
+        msg <- if msgC == nullPtr then pure Nothing else Just <$> peekCString msgC
+        file <- if fileC == nullPtr then pure Nothing else Just <$> peekCString fileC
+        let line = if lineC < 0 then Nothing else Just (fromIntegral lineC)
+        pure (msg, file, line)
 
     throwError $ IslError fnName msg file line
 
