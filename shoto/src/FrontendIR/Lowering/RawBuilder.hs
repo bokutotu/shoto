@@ -32,33 +32,16 @@ data LoweredStmt = LoweredStmt
 
 lowerToRaw :: CheckedProgram -> RawPolyhedralModel
 lowerToRaw prog =
-    case prog.checkedStmts of
-        [singleStmt] ->
-            buildRaw prog.checkedParams prog.checkedIterExtents [lowerSingleStmt prog.checkedIters singleStmt]
-        multipleStmts ->
-            buildRaw
-                prog.checkedParams
-                prog.checkedIterExtents
-                (lowerMultiStmts prog.checkedIters multipleStmts)
+    buildRaw
+        prog.checkedParams
+        prog.checkedIterExtents
+        (lowerStmt prog.checkedIters prog.checkedStmts)
 
-lowerSingleStmt :: [IterName] -> CheckedStmt -> LoweredStmt
-lowerSingleStmt allIters stmt =
-    let domainIters = allIters
-     in LoweredStmt
-            { loweredName = "S"
-            , loweredDomainIters = domainIters
-            , loweredOrderTuple = mkOrderTuple 0 allIters domainIters
-            , loweredLoads = stmt.cLoads
-            , loweredOutputTensor = stmt.cOutputTensor
-            , loweredOutputIndex = stmt.cOutputIndex
-            , loweredIsReduction = isReductionStmt stmt
-            }
-
-lowerMultiStmts :: [IterName] -> [CheckedStmt] -> [LoweredStmt]
-lowerMultiStmts allIters stmts = zipWith lowerStmt [0 ..] (zip (statementNames (length stmts)) stmts)
+lowerStmt :: [IterName] -> [CheckedStmt] -> [LoweredStmt]
+lowerStmt allIters stmts = zipWith lowerOne [0 ..] (zip (statementNames (length stmts)) stmts)
   where
-    lowerStmt :: Int -> (String, CheckedStmt) -> LoweredStmt
-    lowerStmt stage (stmtName, stmt) =
+    lowerOne :: Int -> (String, CheckedStmt) -> LoweredStmt
+    lowerOne stage (stmtName, stmt) =
         let domainIters =
                 case stmt of
                     CAssign{} -> stmt.cOutputIndex

@@ -43,10 +43,10 @@ spec = do
                 expected =
                     RawPolyhedralModel
                         { context = "[N,M] -> { : 0 <= N and 0 <= M }"
-                        , domain = "[N,M] -> { S[i,j] : 0 <= i < N and 0 <= j < M }"
-                        , programOrder = "[N,M] -> { S[i,j] -> [0,i,j] }"
-                        , readAccess = "[N,M] -> { S[i,j] -> A[i,j]; S[i,j] -> B[i,j] }"
-                        , writeAccess = "[N,M] -> { S[i,j] -> C[i,j] }"
+                        , domain = "[N,M] -> { S0[i,j] : 0 <= i < N and 0 <= j < M }"
+                        , programOrder = "[N,M] -> { S0[i,j] -> [0,i,j] }"
+                        , readAccess = "[N,M] -> { S0[i,j] -> A[i,j]; S0[i,j] -> B[i,j] }"
+                        , writeAccess = "[N,M] -> { S0[i,j] -> C[i,j] }"
                         , reductionDomain = "{ }"
                         , reductionRead = "{ }"
                         , reductionWrite = "{ }"
@@ -76,10 +76,10 @@ spec = do
                 expected =
                     RawPolyhedralModel
                         { context = "[N] -> { : 0 <= N }"
-                        , domain = "[N] -> { S[i] : 0 <= i < N }"
-                        , programOrder = "[N] -> { S[i] -> [0,i] }"
+                        , domain = "[N] -> { S0[i] : 0 <= i < N }"
+                        , programOrder = "[N] -> { S0[i] -> [0,i] }"
                         , readAccess = "{ }"
-                        , writeAccess = "[N] -> { S[i] -> A[i] }"
+                        , writeAccess = "[N] -> { S0[i] -> A[i] }"
                         , reductionDomain = "{ }"
                         , reductionRead = "{ }"
                         , reductionWrite = "{ }"
@@ -306,13 +306,13 @@ spec = do
                 expected =
                     RawPolyhedralModel
                         { context = "[N,K] -> { : 0 <= N and 0 <= K }"
-                        , domain = "[N,K] -> { S[i,k] : 0 <= i < N and 0 <= k < K }"
-                        , programOrder = "[N,K] -> { S[i,k] -> [0,i,k] }"
-                        , readAccess = "[N,K] -> { S[i,k] -> A[i,k] }"
-                        , writeAccess = "[N,K] -> { S[i,k] -> C[i] }"
-                        , reductionDomain = "[N,K] -> { S[i,k] : 0 <= i < N and 0 <= k < K }"
-                        , reductionRead = "[N,K] -> { S[i,k] -> C[i] }"
-                        , reductionWrite = "[N,K] -> { S[i,k] -> C[i] }"
+                        , domain = "[N,K] -> { S0[i,k] : 0 <= i < N and 0 <= k < K }"
+                        , programOrder = "[N,K] -> { S0[i,k] -> [0,i,k] }"
+                        , readAccess = "[N,K] -> { S0[i,k] -> A[i,k] }"
+                        , writeAccess = "[N,K] -> { S0[i,k] -> C[i] }"
+                        , reductionDomain = "[N,K] -> { S0[i,k] : 0 <= i < N and 0 <= k < K }"
+                        , reductionRead = "[N,K] -> { S0[i,k] -> C[i] }"
+                        , reductionWrite = "[N,K] -> { S0[i,k] -> C[i] }"
                         }
 
             fmap lowerToRaw (checkProgram front) `shouldBe` Right expected

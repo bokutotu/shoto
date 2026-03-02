@@ -42,7 +42,7 @@ spec = do
                         , forInit = ExprInt 0
                         , forCond = ExprOp (OpLt (ExprId "c0") (ExprId "N"))
                         , forInc = ExprInt 1
-                        , forBody = AstUser $ ExprOp $ OpCall (ExprId "S") [ExprId "c0"]
+                        , forBody = AstUser $ ExprOp $ OpCall (ExprId "S0") [ExprId "c0"]
                         }
 
             result <- compile [] front
