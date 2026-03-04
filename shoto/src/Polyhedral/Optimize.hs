@@ -22,7 +22,7 @@ data ScheduleOptimization
 applyScheduleOptimizations :: [ScheduleOptimization] -> Schedule s -> ISL s (Schedule s)
 applyScheduleOptimizations opts sched =
     foldM
-        (\acc opt -> applyScheduleOptimization opt acc)
+        (flip applyScheduleOptimization)
         sched
         opts
 
@@ -80,6 +80,6 @@ tileSizesToLevelMajor sizesByAxis@(firstAxis : restAxes) = do
     let levelCount = length firstAxis
     unless (all (\sizes -> length sizes == levelCount) sizesByAxis) $
         throwISL "applyScheduleOptimization(Tile): all axes must have the same level count"
-    unless (all (> 0) (concat sizesByAxis)) $
+    unless (all (all (> 0)) sizesByAxis) $
         throwISL "applyScheduleOptimization(Tile): tile sizes must be positive"
     pure (transpose sizesByAxis)

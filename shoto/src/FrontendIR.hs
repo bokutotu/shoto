@@ -1,9 +1,7 @@
 module FrontendIR (
     module FrontendIR.Types,
-    CheckedProgram,
-    checkProgram,
-    lowerToRaw,
+    lowerProgram,
 ) where
 
-import           FrontendIR.Lowering (CheckedProgram, checkProgram, lowerToRaw)
+import           FrontendIR.Lowering (lowerProgram)
 import           FrontendIR.Types

@@ -6,7 +6,7 @@ import qualified Data.List.NonEmpty as NE
 import           FrontendIR         (Axis (..), Expr (..), FrontendError (..),
                                      IxExpr (..), Program (..),
                                      ReductionOp (..), Stmt (..),
-                                     TensorDecl (..), checkProgram, lowerToRaw)
+                                     TensorDecl (..), lowerProgram)
 import           Polyhedral         (RawPolyhedralModel (..))
 import           Test.Hspec
 
@@ -52,7 +52,7 @@ spec = do
                         , reductionWrite = "{ }"
                         }
 
-            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+            lowerProgram front `shouldBe` Right expected
 
         it "lowers a constant write with empty read access" $ do
             let front =
@@ -85,7 +85,7 @@ spec = do
                         , reductionWrite = "{ }"
                         }
 
-            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+            lowerProgram front `shouldBe` Right expected
 
         it "fails when store indices do not match loop axes" $ do
             let invalid =
@@ -110,7 +110,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrStoreIndexMismatch ["i", "j"] ["j", "i"])
+            lowerProgram invalid `shouldBe` Left (ErrStoreIndexMismatch ["i", "j"] ["j", "i"])
 
         it "fails when duplicate iterators are declared" $ do
             let invalid =
@@ -135,7 +135,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrDuplicateIter "i")
+            lowerProgram invalid `shouldBe` Left (ErrDuplicateIter "i")
 
         it "fails when duplicate tensor declarations exist" $ do
             let invalid =
@@ -158,7 +158,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrDuplicateTensor "A")
+            lowerProgram invalid `shouldBe` Left (ErrDuplicateTensor "A")
 
         it "fails when loading from an undeclared tensor" $ do
             let invalid =
@@ -181,7 +181,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUndeclaredTensor "A")
+            lowerProgram invalid `shouldBe` Left (ErrUndeclaredTensor "A")
 
         it "fails when storing to an undeclared tensor" $ do
             let invalid =
@@ -202,7 +202,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUndeclaredTensor "C")
+            lowerProgram invalid `shouldBe` Left (ErrUndeclaredTensor "C")
 
         it "fails when load rank does not match tensor rank" $ do
             let invalid =
@@ -227,7 +227,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrTensorRankMismatch "A" 2 1)
+            lowerProgram invalid `shouldBe` Left (ErrTensorRankMismatch "A" 2 1)
 
         it "fails when store rank does not match tensor rank" $ do
             let invalid =
@@ -252,7 +252,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrTensorRankMismatch "C" 1 2)
+            lowerProgram invalid `shouldBe` Left (ErrTensorRankMismatch "C" 1 2)
 
         it "fails when tensor shape uses undeclared axis parameter" $ do
             let invalid =
@@ -277,7 +277,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUnknownTensorShapeParam "A" "K")
+            lowerProgram invalid `shouldBe` Left (ErrUnknownTensorShapeParam "A" "K")
 
         it "lowers a simple reduction program" $ do
             let front =
@@ -315,7 +315,7 @@ spec = do
                         , reductionWrite = "[N,K] -> { S0[i,k] -> C[i] }"
                         }
 
-            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+            lowerProgram front `shouldBe` Right expected
 
         it "fails when reduction output index is not an ordered loop subsequence" $ do
             let invalid =
@@ -340,7 +340,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid)
+            lowerProgram invalid
                 `shouldBe` Left (ErrReductionOutputNotSubsequence ["i", "j", "k"] ["k", "i"])
 
         it "fails when reduction does not reduce any axis" $ do
@@ -365,7 +365,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left ErrReductionRequiresReducedAxis
+            lowerProgram invalid `shouldBe` Left ErrReductionRequiresReducedAxis
 
         it "fails when reduction load index uses undeclared iterator" $ do
             let invalid =
@@ -391,7 +391,7 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid) `shouldBe` Left (ErrUnknownIndexIter "j")
+            lowerProgram invalid `shouldBe` Left (ErrUnknownIndexIter "j")
 
         it "lowers fused gemm + add + relu with mixed reduction and point-wise statements" $ do
             let front =
@@ -453,7 +453,7 @@ spec = do
                         , reductionWrite = "[N,M,K] -> { S1[i,j,k] -> C[i,j] }"
                         }
 
-            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+            lowerProgram front `shouldBe` Right expected
 
         it "lowers 4D mixed reduction and non-reduction statements with stable stage order" $ do
             let front =
@@ -517,7 +517,7 @@ spec = do
                         , reductionWrite = "[Batch,N,M,K] -> { S1[b,i,j,k] -> Acc[b,i,j] }"
                         }
 
-            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+            lowerProgram front `shouldBe` Right expected
 
         it "zero pads omitted axes in multi-statement stage-first order tuples" $ do
             let front =
@@ -568,7 +568,7 @@ spec = do
                         , reductionWrite = "{ }"
                         }
 
-            fmap lowerToRaw (checkProgram front) `shouldBe` Right expected
+            lowerProgram front `shouldBe` Right expected
 
         it "fails multi-statement lowering when reduction would need multiple reduced axes" $ do
             let invalid =
@@ -601,5 +601,5 @@ spec = do
                                 ]
                         }
 
-            fmap lowerToRaw (checkProgram invalid)
+            lowerProgram invalid
                 `shouldBe` Left (ErrMultiStmtRequiresSingleReductionAxis ["k", "l"])

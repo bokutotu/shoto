@@ -18,23 +18,17 @@ module FrontendIR.Types (
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.String        (IsString (fromString))
 
-newtype IterName = IterName String
-    deriving (Eq, Ord, Show)
+newtype IterName = IterName String deriving (Eq, Ord, Show)
 
-newtype ParamName = ParamName String
-    deriving (Eq, Ord, Show)
+newtype ParamName = ParamName String deriving (Eq, Ord, Show)
 
-newtype TensorName = TensorName String
-    deriving (Eq, Ord, Show)
+newtype TensorName = TensorName String deriving (Eq, Ord, Show)
 
-instance IsString IterName where
-    fromString = IterName
+instance IsString IterName where fromString = IterName
 
-instance IsString ParamName where
-    fromString = ParamName
+instance IsString ParamName where fromString = ParamName
 
-instance IsString TensorName where
-    fromString = TensorName
+instance IsString TensorName where fromString = TensorName
 
 iterNameToString :: IterName -> String
 iterNameToString (IterName name) = name
@@ -57,8 +51,7 @@ data TensorDecl = TensorDecl
     }
     deriving (Eq, Show)
 
-newtype IxExpr = IxVar IterName
-    deriving (Eq, Show)
+newtype IxExpr = IxVar IterName deriving (Eq, Show)
 
 data Expr
     = EConst Int
@@ -67,9 +60,7 @@ data Expr
     | EMul Expr Expr
     deriving (Eq, Show)
 
-data ReductionOp
-    = ReduceAdd
-    deriving (Eq, Show)
+data ReductionOp = ReduceAdd deriving (Eq, Show)
 
 data Stmt
     = Assign
