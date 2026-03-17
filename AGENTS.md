@@ -9,6 +9,20 @@ At the moment, it simply outputs C code.
 
 The main compiler package.
 
+## Runtime Module
+
+`Runtime.*` currently handles CPU JIT compilation and execution:
+
+- `Runtime.Types` - Shared runtime types (`TensorBuffer`, `KernelArg`, `RuntimeError`)
+- `Runtime.CPU` - CPU JIT via `gcc` + `dlopen`. Auto-generates a dispatch wrapper with `void shoto_dispatch(int argc, void** args)`
+- `Runtime` - Convenience re-export for the CPU runtime surface
+
+The CPU runtime currently accepts Shoto-style C kernels only:
+
+- `void shoto_kernel(int N, float* ...)`
+- Argument 0 is the extent scalar, remaining arguments are `float*` tensors
+- Runtime tests should use handwritten C snippets that match this ABI
+
 ### isl
 
 Haskell bindings for Integer Set Library (ISL). It provides the mathematical foundation for polyhedral analysis. By separating it as an independent package from shoto, the ISL bindings can be reused on their own.

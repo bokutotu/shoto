@@ -18,6 +18,8 @@ library:
   source-dirs: src
   dependencies:
     - bytestring
+    - directory
+    - filepath
     - process
     - unix
     - containers
