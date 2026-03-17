@@ -33,8 +33,7 @@ data KernelArg
     deriving (Show)
 
 data RuntimeError
-    = ErrRuntimeUnsupportedSignature String
-    | ErrRuntimeGccFailed FilePath ExitCode String String
+    = ErrRuntimeGccFailed FilePath ExitCode String String
     | ErrRuntimeLoadFailed FilePath String
     | ErrRuntimeSymbolFailed FilePath String String
     | ErrRuntimeArgCountMismatch Int Int

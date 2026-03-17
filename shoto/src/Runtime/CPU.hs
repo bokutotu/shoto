@@ -2,7 +2,6 @@ module Runtime.CPU (
     KernelSignature (..),
     CompiledSharedObject (..),
     compileCProgram,
-    parseKernelSignature,
     appendDispatchWrapper,
     withLoadedCPUKernel,
     runCPUKernel,
@@ -10,8 +9,7 @@ module Runtime.CPU (
 ) where
 
 import           Runtime.CPU.ABI     (KernelSignature (..),
-                                      appendDispatchWrapper,
-                                      parseKernelSignature)
+                                      appendDispatchWrapper)
 import           Runtime.CPU.Execute (runCPUKernel, withLoadedCPUKernel)
 import           Runtime.CPU.JIT     (CompiledSharedObject (..),
                                       cleanupCompiledSharedObject,

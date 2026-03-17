@@ -14,14 +14,15 @@ The main compiler package.
 `Runtime.*` currently handles CPU JIT compilation and execution:
 
 - `Runtime.Types` - Shared runtime types (`TensorBuffer`, `KernelArg`, `RuntimeError`)
-- `Runtime.CPU` - CPU JIT via `gcc` + `dlopen`. Auto-generates a dispatch wrapper with `void shoto_dispatch(int argc, void** args)`
+- `Runtime.CPU` - CPU JIT via `gcc` + `dlopen`. Callers provide `KernelSignature`, and the runtime auto-generates a dispatch wrapper with `void shoto_dispatch(int argc, void** args)`
 - `Runtime` - Convenience re-export for the CPU runtime surface
 
 The CPU runtime currently accepts Shoto-style C kernels only:
 
 - `void shoto_kernel(int N, float* ...)`
+- `compileCProgram` requires explicit `KernelSignature` metadata; the runtime does not parse C to recover argument information
 - Argument 0 is the extent scalar, remaining arguments are `float*` tensors
-- Runtime tests should use handwritten C snippets that match this ABI
+- Runtime tests should use handwritten C snippets plus explicit `KernelSignature` values that match this ABI
 
 ### isl
 

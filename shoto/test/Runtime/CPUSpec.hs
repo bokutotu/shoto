@@ -7,8 +7,8 @@ import           Control.Exception (finally)
 import           Runtime.CPU       (CompiledSharedObject, KernelSignature (..),
                                     appendDispatchWrapper,
                                     cleanupCompiledSharedObject,
-                                    compileCProgram, parseKernelSignature,
-                                    runCPUKernel, withLoadedCPUKernel)
+                                    compileCProgram, runCPUKernel,
+                                    withLoadedCPUKernel)
 import           Runtime.Types     (KernelArg (..), RuntimeError (..),
                                     emptyTensorBuffer, readTensorBuffer,
                                     tensorBufferFromList)
@@ -16,26 +16,9 @@ import           Test.Hspec
 
 spec :: Spec
 spec = do
-    describe "Runtime.CPU.parseKernelSignature" $ do
-        it "parses a Shoto-like kernel signature" $ do
-            parseKernelSignature copyKernel
-                `shouldBe` Right KernelSignature{extentParamName = "N", tensorParamNames = ["A", "B"]}
-
-        it "rejects unsupported signatures" $ do
-            parseKernelSignature "int shoto_kernel(int N, float* A) { return 0; }"
-                `shouldBe` Left
-                    ( ErrRuntimeUnsupportedSignature
-                        "expected `void shoto_kernel(int <extent>, float* <tensor>...)`"
-                    )
-
     describe "Runtime.CPU.appendDispatchWrapper" $ do
-        it "adds the dispatch wrapper for the parsed kernel" $ do
-            let kernelSignature =
-                    KernelSignature
-                        { extentParamName = "N"
-                        , tensorParamNames = ["A", "B"]
-                        }
-                expected =
+        it "adds the dispatch wrapper for the explicit kernel signature" $ do
+            let expected =
                     copyKernel
                         <> "\n"
                         <> unlines
@@ -48,14 +31,14 @@ spec = do
                             , "}"
                             ]
 
-            appendDispatchWrapper copyKernel kernelSignature `shouldBe` expected
+            appendDispatchWrapper copyKernel copyKernelSignature `shouldBe` expected
 
     describe "Runtime.CPU" $ do
         it "compiles and runs a copy kernel" $ do
             output <- emptyTensorBuffer 4
             input <- tensorBufferFromList [1, 2, 3, 4]
 
-            actual <- withCompiledSharedObject copyKernel $ \compiledSharedObject ->
+            actual <- withCompiledSharedObject copyKernelSignature copyKernel $ \compiledSharedObject ->
                 runCompiledKernel
                     compiledSharedObject
                     [ KernelArgInt 4
@@ -72,7 +55,7 @@ spec = do
             lhs <- tensorBufferFromList [1, 2, 3, 4]
             rhs <- tensorBufferFromList [5, 6, 7, 8]
 
-            actual <- withCompiledSharedObject addKernel $ \compiledSharedObject ->
+            actual <- withCompiledSharedObject addKernelSignature addKernel $ \compiledSharedObject ->
                 runCompiledKernel
                     compiledSharedObject
                     [ KernelArgInt 4
@@ -85,15 +68,33 @@ spec = do
             actualOutput <- readTensorBuffer output
             actualOutput `shouldBe` [6, 8, 10, 12]
 
+        it "compiles and runs a kernel without parsing its C signature" $ do
+            output <- emptyTensorBuffer 4
+            input <- tensorBufferFromList [1, 2, 3, 4]
+
+            actual <- withCompiledSharedObject copyKernelSignature restrictCopyKernel $ \compiledSharedObject ->
+                runCompiledKernel
+                    compiledSharedObject
+                    [ KernelArgInt 4
+                    , KernelArgTensor output
+                    , KernelArgTensor input
+                    ]
+
+            actual `shouldBe` Right ()
+            actualOutput <- readTensorBuffer output
+            actualOutput `shouldBe` [1, 2, 3, 4]
+
         it "reports GCC failures for malformed C" $ do
-            compileCProgram "void shoto_kernel(int N, float* A) { this is not valid C; }"
+            compileCProgram
+                malformedKernelSignature
+                "void shoto_kernel(int N, float* A) { this is not valid C; }"
                 >>= (`shouldSatisfy` isGccFailure)
 
         it "rejects the wrong argument count before executing" $ do
             output <- emptyTensorBuffer 4
             input <- tensorBufferFromList [1, 2, 3, 4]
 
-            actual <- withCompiledSharedObject copyKernel $ \compiledSharedObject ->
+            actual <- withCompiledSharedObject copyKernelSignature copyKernel $ \compiledSharedObject ->
                 runCompiledKernel
                     compiledSharedObject
                     [ KernelArgInt 4
@@ -108,7 +109,7 @@ spec = do
             output <- emptyTensorBuffer 4
             input <- tensorBufferFromList [1, 2, 3, 4]
 
-            actual <- withCompiledSharedObject copyKernel $ \compiledSharedObject ->
+            actual <- withCompiledSharedObject copyKernelSignature copyKernel $ \compiledSharedObject ->
                 runCompiledKernel
                     compiledSharedObject
                     [ KernelArgTensor output
@@ -122,7 +123,7 @@ spec = do
             output <- emptyTensorBuffer 2
             input <- tensorBufferFromList [1, 2]
 
-            actual <- withCompiledSharedObject copyKernel $ \compiledSharedObject ->
+            actual <- withCompiledSharedObject copyKernelSignature copyKernel $ \compiledSharedObject ->
                 runCompiledKernel
                     compiledSharedObject
                     [ KernelArgInt 4
@@ -133,11 +134,12 @@ spec = do
             actual `shouldBe` Left (ErrRuntimeTensorTooSmall 1 4 2)
 
 withCompiledSharedObject ::
+    KernelSignature ->
     String ->
     (CompiledSharedObject -> IO a) ->
     IO a
-withCompiledSharedObject source action = do
-    compileCProgram source >>= \case
+withCompiledSharedObject kernelSignature source action = do
+    compileCProgram kernelSignature source >>= \case
         Left err -> do
             expectationFailure $ "expected JIT compilation to succeed, but got: " <> show err
             fail "compileCProgram failed"
@@ -156,6 +158,13 @@ isGccFailure = \case
     Left ErrRuntimeGccFailed{} -> True
     _ -> False
 
+copyKernelSignature :: KernelSignature
+copyKernelSignature =
+    KernelSignature
+        { extentParamName = "N"
+        , tensorParamNames = ["A", "B"]
+        }
+
 copyKernel :: String
 copyKernel =
     unlines
@@ -166,6 +175,13 @@ copyKernel =
         , "}"
         ]
 
+addKernelSignature :: KernelSignature
+addKernelSignature =
+    KernelSignature
+        { extentParamName = "N"
+        , tensorParamNames = ["A", "B", "C"]
+        }
+
 addKernel :: String
 addKernel =
     unlines
@@ -175,3 +191,20 @@ addKernel =
         , "    }"
         , "}"
         ]
+
+restrictCopyKernel :: String
+restrictCopyKernel =
+    unlines
+        [ "void shoto_kernel(int N, float *restrict A, float *restrict B) {"
+        , "    for (int i = 0; i < N; ++i) {"
+        , "        A[i] = B[i];"
+        , "    }"
+        , "}"
+        ]
+
+malformedKernelSignature :: KernelSignature
+malformedKernelSignature =
+    KernelSignature
+        { extentParamName = "N"
+        , tensorParamNames = ["A"]
+        }

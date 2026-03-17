@@ -6,8 +6,7 @@ module Runtime.CPU.JIT (
     cleanupCompiledSharedObject,
 ) where
 
-import           Runtime.CPU.ABI  (KernelSignature, appendDispatchWrapper,
-                                   parseKernelSignature)
+import           Runtime.CPU.ABI  (KernelSignature, appendDispatchWrapper)
 import           Runtime.Types    (RuntimeError (..))
 import           System.Directory (doesFileExist, getTemporaryDirectory,
                                    removeFile)
@@ -23,34 +22,31 @@ data CompiledSharedObject = CompiledSharedObject
     }
     deriving (Eq, Show)
 
-compileCProgram :: String -> IO (Either RuntimeError CompiledSharedObject)
-compileCProgram source =
-    case parseKernelSignature source of
-        Left err -> pure $ Left err
-        Right kernelSignature -> do
-            tempDir <- getTemporaryDirectory
-            (cSourcePath, sourceHandle) <- openTempFile tempDir "shoto-runtime.c"
-            hClose sourceHandle
-            let sharedObjectPath = replaceExtension cSourcePath "so"
-                wrappedSource = appendDispatchWrapper source kernelSignature
-            writeFile cSourcePath wrappedSource
-            (exitCode, stdoutText, stderrText) <-
-                readCreateProcessWithExitCode
-                    (proc "gcc" ["-shared", "-fPIC", "-O2", "-std=c11", cSourcePath, "-o", sharedObjectPath])
-                    ""
-            case exitCode of
-                ExitSuccess ->
-                    pure $
-                        Right
-                            CompiledSharedObject
-                                { cSourcePath
-                                , sharedObjectPath
-                                , kernelSignature
-                                }
-                ExitFailure _ -> do
-                    cleanupPathIfExists cSourcePath
-                    cleanupPathIfExists sharedObjectPath
-                    pure $ Left $ ErrRuntimeGccFailed cSourcePath exitCode stdoutText stderrText
+compileCProgram :: KernelSignature -> String -> IO (Either RuntimeError CompiledSharedObject)
+compileCProgram kernelSignature source = do
+    tempDir <- getTemporaryDirectory
+    (cSourcePath, sourceHandle) <- openTempFile tempDir "shoto-runtime.c"
+    hClose sourceHandle
+    let sharedObjectPath = replaceExtension cSourcePath "so"
+        wrappedSource = appendDispatchWrapper source kernelSignature
+    writeFile cSourcePath wrappedSource
+    (exitCode, stdoutText, stderrText) <-
+        readCreateProcessWithExitCode
+            (proc "gcc" ["-shared", "-fPIC", "-O2", "-std=c11", cSourcePath, "-o", sharedObjectPath])
+            ""
+    case exitCode of
+        ExitSuccess ->
+            pure $
+                Right
+                    CompiledSharedObject
+                        { cSourcePath
+                        , sharedObjectPath
+                        , kernelSignature
+                        }
+        ExitFailure _ -> do
+            cleanupPathIfExists cSourcePath
+            cleanupPathIfExists sharedObjectPath
+            pure $ Left $ ErrRuntimeGccFailed cSourcePath exitCode stdoutText stderrText
 
 cleanupCompiledSharedObject :: CompiledSharedObject -> IO ()
 cleanupCompiledSharedObject compiledSharedObject = do
