@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shoto Commit Writer"
+  short_description: "Draft Shoto-style commit messages from diffs"
+  default_prompt: "Use $write-shoto-commit-message to draft a commit message for the current staged changes in this Shoto repository."
