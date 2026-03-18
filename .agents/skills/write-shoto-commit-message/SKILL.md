@@ -7,7 +7,7 @@ description: Draft repository-specific commit messages for the Shoto polyhedral 
 
 ## Overview
 
-Draft commit messages for this repo in a fixed template: one summary line plus `Why` and `What` sections.
+Draft exactly one paste-ready commit message for this repo in a fixed template: one summary line plus `Why` and `What` sections.
 
 ## Use This Format
 
@@ -30,20 +30,23 @@ Use `feat`, `fix`, `refactor`, `docs`, `test`, or `chore`. Use `chore`, not `chr
 ## Draft The Message
 
 1. Inspect staged changes first with `git diff --cached --stat`, `git diff --cached --name-only`, and `git diff --cached`.
-2. If nothing is staged, inspect `git diff --stat`, `git diff --name-only`, and `git diff`, then say the draft is based on unstaged changes.
+2. If nothing is staged, inspect `git diff --stat`, `git diff --name-only`, and `git diff`, then base the draft on unstaged changes.
 3. Pick one primary `module` from [commit-style.md](references/commit-style.md).
 4. Write a one-line summary for the main effect. Keep it factual, imperative, and usually under 72 characters. Do not end it with a period.
 5. Always include both sections:
    - `Why`: motivation, problem, or constraint
    - `What`: concrete code, API, or config changes
 6. When adding a dependency, state in `Why` why this dependency or module was chosen for this code path.
+7. Output exactly one recommended commit message. Do not include alternatives, variants, or a second candidate.
+8. Output only the commit message text. Do not add commentary, status notes, explanations, labels, markdown fences, or surrounding prose.
 
 ## Keep It Tight
 
 - Prefer the repo's recent English header style for the first line.
 - Use code terms as written in the repo: `FrontendIR`, `Polyhedral`, `Runtime`, `Codegen`, `ISL`, `CPU JIT`, `KernelSignature`.
 - Do not claim tests, formatting, or review work unless you actually verified them.
-- If the diff is ambiguous, give one preferred draft first, then alternatives in the same template.
+- If the diff is ambiguous, pick the best single draft without surfacing alternatives.
+- The final response must be directly copy-pastable into a commit message editor.
 
 ## Example
 

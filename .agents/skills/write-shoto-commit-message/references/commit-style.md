@@ -35,5 +35,6 @@ Prefer the recent English header style used in the newest history for the first 
 ## Preferred Response Shape
 
 - Start with one recommended commit message.
-- Add alternatives only when the diff can reasonably be described in more than one way.
+- Return only one recommended commit message, even when the diff is ambiguous.
 - Prefer subjects that name the semantic effect instead of listing edited files.
+- Return only the raw commit message text, with no intro, explanation, labels, or markdown fences.
