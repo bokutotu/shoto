@@ -29,10 +29,11 @@ compileCProgram kernelSignature source = do
     hClose sourceHandle
     let sharedObjectPath = replaceExtension cSourcePath "so"
         wrappedSource = appendDispatchWrapper source kernelSignature
+        gccArgs = optimizedSharedObjectArgs cSourcePath sharedObjectPath
     writeFile cSourcePath wrappedSource
     (exitCode, stdoutText, stderrText) <-
         readCreateProcessWithExitCode
-            (proc "gcc" ["-shared", "-fPIC", "-O2", "-std=c11", cSourcePath, "-o", sharedObjectPath])
+            (proc "gcc" gccArgs)
             ""
     case exitCode of
         ExitSuccess ->
@@ -59,3 +60,16 @@ cleanupPathIfExists path = do
     if pathExists
         then removeFile path
         else pure ()
+
+optimizedSharedObjectArgs :: FilePath -> FilePath -> [String]
+optimizedSharedObjectArgs cSourcePath sharedObjectPath =
+    [ "-shared"
+    , "-fPIC"
+    , "-O3"
+    , "-march=native"
+    , "-mtune=native"
+    , "-std=c11"
+    , cSourcePath
+    , "-o"
+    , sharedObjectPath
+    ]
