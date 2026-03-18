@@ -1,137 +1,20 @@
-## What Is Shoto
+## Environment
 
-Shoto is a polyhedral compiler. Its goal is to describe tensor computations and generate GPU kernel/SIMD code.
-At the moment, it simply outputs C code.
+- Work inside `nix develop`.
+- `lefthook` runs `./format.sh` and `cabal test all` on pre-commit for touched Haskell files.
 
-## Package Structure
+## Commands
 
-### shoto
+- Test: `cabal test all`
+- Lint: `hlint .`
+- Apply HLint refactors: `./hlint-refactor.sh`
+- Format Haskell: `./format.sh`
 
-The main compiler package.
+## Haskell Style
 
-## Runtime Module
+- Prefer record-dot syntax (`x.field`) in new or edited code.
 
-`Runtime.*` currently handles CPU JIT compilation and execution:
+## Documentation
 
-- `Runtime.Types` - Shared runtime types (`TensorBuffer`, `KernelArg`, `RuntimeError`)
-- `Runtime.CPU` - CPU JIT via `gcc` + `dlopen`. Callers provide `KernelSignature`, and the runtime auto-generates a dispatch wrapper with `void shoto_dispatch(int argc, void** args)`
-- `Runtime` - Convenience re-export for the CPU runtime surface
-
-The CPU runtime currently accepts Shoto-style C kernels only:
-
-- `void shoto_kernel(int N, float* ...)`
-- `compileCProgram` requires explicit `KernelSignature` metadata; the runtime does not parse C to recover argument information
-- Argument 0 is the extent scalar, remaining arguments are `float*` tensors
-- Runtime tests should use handwritten C snippets plus explicit `KernelSignature` values that match this ABI
-
-### isl
-
-Haskell bindings for Integer Set Library (ISL). It provides the mathematical foundation for polyhedral analysis. By separating it as an independent package from shoto, the ISL bindings can be reused on their own.
-
-## Language and Style
-
-- **GHC2024**: Use the latest Haskell language extension set
-- **Leading comma**: Leading-comma style (easier to review diffs)
-- **OverloadedRecordDot**: Prefer dot syntax for record field access (`x.field`) in new/edited Haskell code
-- **4-space indentation**
-
-## Prerequisites
-
-Run inside the `nix develop` environment. `lefthook` automatically runs formatting and tests on commit.
-
-## Test
-
-```bash
-cabal test all
-```
-
-## Lint
-
-```bash
-hlint .
-```
-
-Try automatic fixes:
-```bash
-./hlint-refactor.sh
-```
-
-## Formatting
-
-```bash
-./format.sh
-```
-
-## FrontendIR Tensor Rules
-
-- `Program` must declare tensors explicitly via `tensors :: NonEmpty TensorDecl`.
-- Tensor shape is symbolic (`[ParamName]`), and rank is `length shape`.
-- `checkProgram` is the validation boundary (duplicates, undeclared tensors, rank mismatch, unknown shape params).
-- `lowerToRaw` only lowers a checked program and does not perform validation.
-
-# ISL Haskell Bindings
-
-Haskell bindings for Integer Set Library (ISL).
-A foundational library for polyhedral analysis.
-
-## Module Structure
-
-- `ISL.Core` - ISL computation monad (`runISL`) and error types
-- `ISL.*` - Public APIs for each domain (Set, Map, Schedule, etc.)
-- `ISL.Internal.FFI` - C FFI bindings
-- `ISL.Internal.<Module>/Types.hs` - Type definitions
-- `ISL.Internal.<Module>/Ops.hs` - Operation implementations
-
-## Development Rules
-
-### When Adding New Features
-
-When adding new functions or modules, always add the corresponding tests at the same time.
-
-1. Add `foreign import` to `ISL.Internal.FFI`
-2. Implement wrappers in `Internal/<Module>/Ops.hs`
-3. Re-export the public API from `ISL/<Module>.hs`
-4. **Add tests in `test/ISL/<Module>Spec.hs`**
-
-### How to Write Tests
-
-Use assertions that verify exact matches:
-
-- `shouldBe` - Exact value match
-- `shouldMatchList` - List element match (order-insensitive)
-
-As a rule, do not use partial-match assertions like `shouldContain`.
-
-## Running Tests
-
-```bash
-cabal test isl-test
-```
-
-## ISL Monad (`ISL s`)
-
-The ISL monad internally manages the ISL library's `isl_ctx`. Users do not need to manipulate `isl_ctx` directly.
-
-- Run ISL computations with `runISL :: ISL s a -> IO (Either IslError a)`
-- Allocation and deallocation of `isl_ctx` are handled automatically
-- If an FFI function requires `isl_ctx`, you can obtain it via `ISL.Core.askEnv`
-
-### Note: Functions Named `context`
-
-ISL has multiple functions named "context":
-
-- `isl_ctx_*`: Context for the entire ISL library (managed by the ISL monad)
-- `isl_schedule_constraints_set_context`: Sets a parameter-constraint Set (type `isl_set`)
-- `isl_ast_build_from_context`: Parameter constraints for AST generation (type `isl_set`)
-
-The arguments to `isl_schedule_constraints_set_context` and `isl_ast_build_from_context` are `isl_set`, not `isl_ctx`.
-
-## Documentation Updates
-
-Each time planning (plan mode) is completed, update the following files as needed:
-
-- `/CLAUDE.md` - Instructions for Claude Code
-- `/AGENTS.md` - Shared instructions for multiple AI tools
-- `/isl/CLAUDE.md` - ISL package-specific conventions
-
-Keep shared sections in `AGENTS.md` and `CLAUDE.md` synchronized.
+- Keep `AGENTS.md` and `CLAUDE.md` semantically synchronized.
+- keep root ai docs focused on workflow and conventions, not code-discoverable details.
