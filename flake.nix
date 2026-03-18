@@ -66,18 +66,41 @@
         };
 
         isLinux = pkgs.stdenv.isLinux;
+        srcRoot = builtins.path {
+          path = ./.;
+          name = "shoto-root";
+          filter = path: type:
+            let
+              baseName = builtins.baseNameOf path;
+            in
+              ! (
+                baseName == ".git"
+                || baseName == ".cabal"
+                || baseName == ".ccls-cache"
+                || baseName == "dist-newstyle"
+                || baseName == "tags"
+              );
+        };
         
 
         # hpackでcabalファイルを生成したソースを作成
-        src = pkgs.runCommand "shoto-src" {
+        mkProjectSrc = { useCudaProject ? false }:
+          pkgs.runCommand "shoto-src${pkgs.lib.optionalString useCudaProject "-cuda"}" {
           nativeBuildInputs = [ pkgs.haskellPackages.hpack ];
         } ''
-          cp -r ${./.} $out
+          cp -r ${srcRoot} $out
           chmod -R +w $out
           cd $out
+          ${pkgs.lib.optionalString useCudaProject ''
+            cp cabal.project.cuda cabal.project
+          ''}
           hpack shoto/
           hpack isl/
+          hpack nvidia-cuda/
         '';
+
+        src = mkProjectSrc {};
+        cudaSrc = mkProjectSrc { useCudaProject = true; };
 
         project = pkgs.haskell-nix.project' {
           inherit src;
@@ -86,6 +109,19 @@
             # システムのcudartライブラリを使用
             packages.shoto.components.library.libs = pkgs.lib.mkForce [];
             packages.shoto.components.tests.shoto-test.libs = pkgs.lib.mkForce [];
+            packages.shoto.flags.cuda-runtime = false;
+          }];
+        };
+
+        projectCuda = pkgs.haskell-nix.project' {
+          src = cudaSrc;
+          compiler-nix-name = "ghc912";
+          modules = [{
+            packages.shoto.components.library.libs = pkgs.lib.mkForce [];
+            packages.shoto.components.tests.shoto-test.libs = pkgs.lib.mkForce [];
+            packages.shoto.flags.cuda-runtime = true;
+            packages.nvidia-cuda.components.library.libs = pkgs.lib.mkForce [];
+            packages.nvidia-cuda.components.tests.nvidia-cuda-test.libs = pkgs.lib.mkForce [];
           }];
         };
 
@@ -108,32 +144,35 @@
           pkgs.islGit
         ];
 
-        mkShell = { withCuda ? false }:
-          project.shellFor {
+        mkShell = { projectForShell, withCuda ? false }:
+          projectForShell.shellFor {
             tools = shellTools;
-            buildInputs = baseBuildInputs
-              ++ pkgs.lib.optionals withCuda [ pkgs.cudaPackages.cudatoolkit ];
+            buildInputs = baseBuildInputs;
             shellHook = ''
               # lefthookをインストール
               lefthook install
 
-              ${pkgs.lib.optionalString withCuda ''
-                # NixのCUDAを優先
-                export CUDA_PATH="${pkgs.cudaPackages.cudatoolkit}"
-                export LD_LIBRARY_PATH="${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.cudaPackages.cudatoolkit}/lib64:$LD_LIBRARY_PATH"
-                export LIBRARY_PATH="${pkgs.cudaPackages.cudatoolkit}/lib:${pkgs.cudaPackages.cudatoolkit}/lib64:$LIBRARY_PATH"
-                export C_INCLUDE_PATH="${pkgs.cudaPackages.cudatoolkit}/include:$C_INCLUDE_PATH"
-              ''}
-              
-              # システムのCUDAを使う
+              export SHOTO_CABAL_PROJECT_FILE="${if withCuda then "cabal.project.cuda" else "cabal.project"}"
+
+              libstdcxx_dir="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
+              export LD_LIBRARY_PATH="$libstdcxx_dir:$LD_LIBRARY_PATH"
+              export LIBRARY_PATH="$libstdcxx_dir:$LIBRARY_PATH"
+
+              # CUDA-enabled shells use the system CUDA installation.
               if [ -n "$CUDA_PATH" ]; then
-                export LD_LIBRARY_PATH="$CUDA_PATH/lib64:$LD_LIBRARY_PATH"
-                export LIBRARY_PATH="$CUDA_PATH/lib64:$LIBRARY_PATH"
-                export C_INCLUDE_PATH="$CUDA_PATH/include:$C_INCLUDE_PATH"
-              elif [ -d "/usr/local/cuda" ]; then
-                export LD_LIBRARY_PATH="/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
-                export LIBRARY_PATH="/usr/local/cuda/lib64:$LIBRARY_PATH"
-                export C_INCLUDE_PATH="/usr/local/cuda/include:$C_INCLUDE_PATH"
+                export LD_LIBRARY_PATH="$CUDA_PATH/lib64:$CUDA_PATH/targets/x86_64-linux/lib:$LD_LIBRARY_PATH"
+                export LIBRARY_PATH="$CUDA_PATH/lib64:$CUDA_PATH/targets/x86_64-linux/lib:$LIBRARY_PATH"
+                export C_INCLUDE_PATH="$CUDA_PATH/include:$CUDA_PATH/targets/x86_64-linux/include:$C_INCLUDE_PATH"
+              else
+                for cuda_path in /usr/local/cuda /usr/local/cuda-*; do
+                  if [ -d "$cuda_path" ]; then
+                    export CUDA_PATH="$cuda_path"
+                    export LD_LIBRARY_PATH="$cuda_path/lib64:$cuda_path/targets/x86_64-linux/lib:$LD_LIBRARY_PATH"
+                    export LIBRARY_PATH="$cuda_path/lib64:$cuda_path/targets/x86_64-linux/lib:$LIBRARY_PATH"
+                    export C_INCLUDE_PATH="$cuda_path/include:$cuda_path/targets/x86_64-linux/include:$C_INCLUDE_PATH"
+                    break
+                  fi
+                done
               fi
               
               # WSL環境用の追加パス
@@ -147,17 +186,15 @@
           };
       in {
         devShells = {
-          default = mkShell {};
+          default = mkShell { projectForShell = project; };
         } // pkgs.lib.optionalAttrs isLinux {
-          cuda = mkShell { withCuda = true; };
+          cuda = mkShell { projectForShell = projectCuda; withCuda = true; };
         };
 
         packages = {
           default = project.hsPkgs.shoto.components.library;
         } // pkgs.lib.optionalAttrs isLinux {
-          cuda = project.hsPkgs.shoto.components.library.overrideAttrs (old: {
-            buildInputs = (old.buildInputs or []) ++ [ pkgs.cudaPackages.cudatoolkit ];
-          });
+          cuda = projectCuda.hsPkgs.shoto.components.library;
         };
       });
 }

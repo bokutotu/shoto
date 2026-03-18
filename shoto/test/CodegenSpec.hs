@@ -35,7 +35,7 @@ spec = do
             let program = simpleCopyProgram
                 expected =
                     unlines
-                        [ "__global__ void shoto_kernel_cuda(int N, float* A, float* B) {"
+                        [ "extern \"C\" __global__ void shoto_kernel_cuda(int N, float* A, float* B) {"
                         , "    int c0 = blockIdx.x * blockDim.x + threadIdx.x;"
                         , "    if (c0 < N) {"
                         , "        A[c0] = B[c0];"
@@ -50,7 +50,7 @@ spec = do
             let program = simpleCopyProgram
                 expected =
                     unlines
-                        [ "__global__ void shoto_kernel_cuda(int N, float* A, float* B) {"
+                        [ "extern \"C\" __global__ void shoto_kernel_cuda(int N, float* A, float* B) {"
                         , "    int c0 = blockIdx.y * blockDim.y + threadIdx.y;"
                         , "    if (c0 < N) {"
                         , "        A[c0] = B[c0];"

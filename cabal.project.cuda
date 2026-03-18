@@ -1,0 +1,7 @@
+packages:
+  shoto/
+  isl/
+  nvidia-cuda/
+
+package shoto
+  flags: +cuda-runtime

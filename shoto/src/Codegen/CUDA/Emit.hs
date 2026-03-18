@@ -20,7 +20,7 @@ emitCudaProgram cudaProgram =
   where
     headerLine =
         let CudaKernelName kernelName = cudaProgram.cudaKernelName
-         in "__global__ void "
+         in "extern \"C\" __global__ void "
                 <> kernelName
                 <> "("
                 <> renderParams cudaProgram.cudaExtentParam cudaProgram.cudaTensorArgs

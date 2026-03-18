@@ -6,8 +6,8 @@ module Runtime.CPU.JIT (
     cleanupCompiledSharedObject,
 ) where
 
-import           Runtime.CPU.ABI  (KernelSignature, appendDispatchWrapper)
-import           Runtime.Types    (RuntimeError (..))
+import           Runtime.CPU.ABI  (appendDispatchWrapper)
+import           Runtime.Types    (KernelSignature, RuntimeError (..))
 import           System.Directory (doesFileExist, getTemporaryDirectory,
                                    removeFile)
 import           System.Exit      (ExitCode (..))

@@ -1,0 +1,48 @@
+name: nvidia-cuda
+version: 0.0.0.1
+license: MIT
+license-file: LICENSE
+maintainer: mushin.hudoushin@gmail.com
+author: Hikaru KONDO
+synopsis: Safe Haskell wrappers for NVIDIA CUDA Driver API and NVRTC
+category: Foreign
+
+language: GHC2024
+
+dependencies:
+  - base >= 4.19.1.0
+
+ghc-options: -Wall
+
+library:
+  source-dirs: src
+  exposed-modules:
+    - CUDA
+    - CUDA.Device
+    - CUDA.Memory
+    - CUDA.Module
+    - CUDA.NVRTC
+  other-modules:
+    - CUDA.Core
+    - CUDA.Internal.Driver.FFI
+    - CUDA.Internal.NVRTC.FFI
+  extra-libraries:
+    - cuda
+    - nvrtc
+  dependencies:
+    - bytestring
+    - directory
+    - filepath
+    - mtl
+    - unix
+
+tests:
+  nvidia-cuda-test:
+    main: Spec.hs
+    source-dirs: test
+    build-tools:
+      - hspec-discover
+    dependencies:
+      - nvidia-cuda
+      - hspec
+      - bytestring

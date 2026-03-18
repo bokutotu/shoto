@@ -4,14 +4,13 @@
 module Runtime.CPUSpec (spec) where
 
 import           Control.Exception (finally)
-import           Runtime.CPU       (CompiledSharedObject, KernelSignature (..),
-                                    appendDispatchWrapper,
+import           Runtime.CPU       (CompiledSharedObject, appendDispatchWrapper,
                                     cleanupCompiledSharedObject,
                                     compileCProgram, runCPUKernel,
                                     withLoadedCPUKernel)
-import           Runtime.Types     (KernelArg (..), RuntimeError (..),
-                                    emptyTensorBuffer, readTensorBuffer,
-                                    tensorBufferFromList)
+import           Runtime.Types     (KernelArg (..), KernelSignature (..),
+                                    RuntimeError (..), emptyTensorBuffer,
+                                    readTensorBuffer, tensorBufferFromList)
 import           Test.Hspec
 
 spec :: Spec

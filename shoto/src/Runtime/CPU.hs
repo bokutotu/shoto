@@ -1,5 +1,4 @@
 module Runtime.CPU (
-    KernelSignature (..),
     CompiledSharedObject (..),
     compileCProgram,
     appendDispatchWrapper,
@@ -8,8 +7,7 @@ module Runtime.CPU (
     cleanupCompiledSharedObject,
 ) where
 
-import           Runtime.CPU.ABI     (KernelSignature (..),
-                                      appendDispatchWrapper)
+import           Runtime.CPU.ABI     (appendDispatchWrapper)
 import           Runtime.CPU.Execute (runCPUKernel, withLoadedCPUKernel)
 import           Runtime.CPU.JIT     (CompiledSharedObject (..),
                                       cleanupCompiledSharedObject,

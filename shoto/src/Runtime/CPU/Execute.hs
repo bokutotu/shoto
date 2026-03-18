@@ -11,9 +11,10 @@ import           Foreign.C.Types            (CInt (..))
 import           Foreign.Marshal.Array      (withArray)
 import           Foreign.Marshal.Utils      (with)
 import           Foreign.Ptr                (FunPtr, Ptr, castPtr)
-import           Runtime.CPU.ABI            (KernelSignature (..))
 import           Runtime.CPU.JIT            (CompiledSharedObject (..))
-import           Runtime.Types              (KernelArg (..), RuntimeError (..),
+import           Runtime.Types              (KernelArg (..),
+                                             KernelSignature (..),
+                                             RuntimeError (..),
                                              TensorBuffer (..),
                                              withTensorBufferPtr)
 import           System.Posix.DynamicLinker (DL,

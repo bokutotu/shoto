@@ -1,17 +1,11 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Runtime.CPU.ABI (
-    KernelSignature (..),
     appendDispatchWrapper,
 ) where
 
-import           Data.List (dropWhileEnd, intercalate)
-
-data KernelSignature = KernelSignature
-    { extentParamName :: String
-    , tensorParamNames :: [String]
-    }
-    deriving (Eq, Show)
+import           Data.List     (dropWhileEnd, intercalate)
+import           Runtime.Types (KernelSignature (..))
 
 appendDispatchWrapper :: String -> KernelSignature -> String
 appendDispatchWrapper source kernelSignature =
