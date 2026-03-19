@@ -1,1 +1,1 @@
-find shoto/src -name "*.hs" -exec hlint --refactor --refactor-options="--inplace" {} \;
+find src -name "*.hs" -exec hlint --refactor --refactor-options="--inplace" {} \;

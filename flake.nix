@@ -91,7 +91,7 @@
           cp -r ${srcRoot} $out
           chmod -R +w $out
           cd $out
-          hpack shoto/
+          hpack .
         '';
 
         src = mkProjectSrc;
@@ -132,8 +132,6 @@
             shellHook = ''
               # lefthookをインストール
               lefthook install
-
-              export SHOTO_CABAL_PROJECT_FILE="cabal.project"
 
               libstdcxx_dir="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
               export LD_LIBRARY_PATH="$libstdcxx_dir:$LD_LIBRARY_PATH"

@@ -1,7 +1,7 @@
 """ISL/islpy playbook: dependence analysis + scheduling (incl. reductions).
 
 Run:
-    cd shoto/playground
+    cd playground
     uv run python reductions_playbook.py
 
 Notes:

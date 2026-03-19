@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-HS_FILES=$(find shoto isl -name "*.hs" -type f)
+HS_FILES=$(find src test -type f -name "*.hs")
 
 if [ -n "$HS_FILES" ]; then
     echo "$HS_FILES" | xargs fourmolu -i
