@@ -19,8 +19,11 @@ library:
   cpp-options:
     - -DCUDA_RUNTIME
   extra-libraries:
+    - isl
     - cuda
     - nvrtc
+  pkg-config-dependencies:
+    - isl
   dependencies:
     - bytestring
     - directory
@@ -29,8 +32,9 @@ library:
     - unix
     - containers
     - mtl
+    - text
+    - megaparsec
     - transformers
-    - isl
 
 tests:
   shoto-test:
@@ -42,7 +46,6 @@ tests:
       - hspec-discover
     dependencies:
       - shoto
-      - isl
       - hspec
       - process
       - bytestring

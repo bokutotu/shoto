@@ -3,16 +3,17 @@ module Polyhedral.Optimize (
     applyScheduleOptimizations,
 ) where
 
-import           Control.Monad (foldM, unless, when)
-import           Data.List     (transpose)
-import           ISL           (ISL, Schedule, ScheduleNode,
-                                ScheduleNodeType (..),
-                                scheduleMapScheduleNodeBottomUp,
-                                scheduleNodeBandNMember,
-                                scheduleNodeBandPermuteMembers,
-                                scheduleNodeBandTile, scheduleNodeChild,
-                                scheduleNodeGetType, scheduleNodeNChildren,
-                                scheduleNodeParent, throwISL)
+import           Control.Monad       (foldM, unless, when)
+import           Data.List           (transpose)
+import           Polyhedral.Internal (ISL, Schedule, ScheduleNode,
+                                      ScheduleNodeType (..),
+                                      scheduleMapScheduleNodeBottomUp,
+                                      scheduleNodeBandNMember,
+                                      scheduleNodeBandPermuteMembers,
+                                      scheduleNodeBandTile, scheduleNodeChild,
+                                      scheduleNodeGetType,
+                                      scheduleNodeNChildren, scheduleNodeParent,
+                                      throwISL)
 
 data ScheduleOptimization
     = LoopInterchange [Int]

@@ -5,15 +5,15 @@ module Codegen (
     generateCuda,
 ) where
 
-import           Codegen.C.Ast     (CAstError, lowerToCProgram)
-import           Codegen.C.Emit    (emitCProgram)
-import           Codegen.CUDA.Ast  (CudaAstError, CudaDim (..),
-                                    lowerToCudaProgram)
-import           Codegen.CUDA.Emit (emitCudaProgram)
-import           Codegen.GenIR     (GenIRError, buildGenProgram)
-import           Data.Bifunctor    (first)
-import           FrontendIR        (Program)
-import           ISL               (AstTree)
+import           Codegen.C.Ast       (CAstError, lowerToCProgram)
+import           Codegen.C.Emit      (emitCProgram)
+import           Codegen.CUDA.Ast    (CudaAstError, CudaDim (..),
+                                      lowerToCudaProgram)
+import           Codegen.CUDA.Emit   (emitCudaProgram)
+import           Codegen.GenIR       (GenIRError, buildGenProgram)
+import           Data.Bifunctor      (first)
+import           FrontendIR          (Program)
+import           Polyhedral.Internal (AstTree)
 
 data CodegenError
     = CodegenGenIRError GenIRError

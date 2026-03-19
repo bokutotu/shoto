@@ -2,14 +2,14 @@
 
 module ShotoSpec (spec) where
 
-import qualified Data.List.NonEmpty as NE
-import           FrontendIR         (Axis (..), Expr (..), FrontendError (..),
-                                     IxExpr (..), Program (..), Stmt (..),
-                                     TensorDecl (..))
-import           ISL                (AstExpression (..), AstOp (..),
-                                     AstTree (..), IslError (..))
-import           Polyhedral         (ScheduleOptimization (..))
-import           Shoto              (CompileError (..), compile)
+import qualified Data.List.NonEmpty  as NE
+import           FrontendIR          (Axis (..), Expr (..), FrontendError (..),
+                                      IxExpr (..), Program (..), Stmt (..),
+                                      TensorDecl (..))
+import           Polyhedral          (ScheduleOptimization (..))
+import           Polyhedral.Internal (AstExpression (..), AstOp (..),
+                                      AstTree (..), IslError (..))
+import           Shoto               (CompileError (..), compile)
 import           Test.Hspec
 
 spec :: Spec

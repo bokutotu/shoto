@@ -3,8 +3,8 @@
 
 module Polyhedral.Types where
 
-import           ISL (ISL, Set, UnionMap, UnionSet, unionMapIsEmpty,
-                      unionSetIsEmpty)
+import           Polyhedral.Internal (ISL, Set, UnionMap, UnionSet,
+                                      unionMapIsEmpty, unionSetIsEmpty)
 
 newtype Domain s = Domain (UnionSet s)
     deriving newtype (IsEmpty, IntoUnionSet, FromUnionSet)

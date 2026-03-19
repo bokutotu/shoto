@@ -92,7 +92,6 @@
           chmod -R +w $out
           cd $out
           hpack shoto/
-          hpack isl/
         '';
 
         src = mkProjectSrc;

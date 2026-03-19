@@ -4,11 +4,11 @@ module Polyhedral (
     ScheduleOptimization (..),
 ) where
 
-import           ISL                          (AstTree, ISL,
+import           Polyhedral.AnalyzeDependence (analyzeDependences)
+import           Polyhedral.Internal          (AstTree, ISL,
                                                astBuildFromContext,
                                                astBuildNodeFromSchedule,
                                                astNodeToTree)
-import           Polyhedral.AnalyzeDependence (analyzeDependences)
 import           Polyhedral.Optimize          (ScheduleOptimization (..),
                                                applyScheduleOptimizations)
 import           Polyhedral.Parse             (RawPolyhedralModel (..),

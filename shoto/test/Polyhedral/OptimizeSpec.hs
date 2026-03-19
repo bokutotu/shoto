@@ -2,7 +2,7 @@ module Polyhedral.OptimizeSpec (spec) where
 
 import           Control.Monad       (void)
 import           Data.Either         (isLeft)
-import           ISL                 (runISL, schedule, scheduleIsEqual)
+import           Polyhedral.Internal (runISL, schedule, scheduleIsEqual)
 import           Polyhedral.Optimize (ScheduleOptimization (..),
                                       applyScheduleOptimizations)
 import           Test.Hspec

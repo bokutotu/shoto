@@ -3,11 +3,12 @@
 
 module Polyhedral.Parse where
 
-import           ISL              (ISL, set, unionMap, unionMapIntersectDomain,
-                                   unionSet, unionSetIntersect)
-import           Polyhedral.Types (Access (..), Domain (..),
-                                   IntoUnionSet (intoUnionSet),
-                                   PolyhedralModel (..), ProgramOrder (..))
+import           Polyhedral.Internal (ISL, set, unionMap,
+                                      unionMapIntersectDomain, unionSet,
+                                      unionSetIntersect)
+import           Polyhedral.Types    (Access (..), Domain (..),
+                                      IntoUnionSet (intoUnionSet),
+                                      PolyhedralModel (..), ProgramOrder (..))
 
 data RawPolyhedralModel = RawPolyhedralModel
     { context :: String

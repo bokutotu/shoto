@@ -1,11 +1,11 @@
 module Polyhedral.Empty where
 
-import           ISL              (ISL, unionMap, unionMapIsEmpty, unionSet,
-                                   unionSetIsEmpty)
-import           Polyhedral.Types (FromUnionMap (fromUnionMap),
-                                   FromUnionSet (fromUnionSet),
-                                   IntoUnionMap (intoUnionMap),
-                                   IntoUnionSet (intoUnionSet))
+import           Polyhedral.Internal (ISL, unionMap, unionMapIsEmpty, unionSet,
+                                      unionSetIsEmpty)
+import           Polyhedral.Types    (FromUnionMap (fromUnionMap),
+                                      FromUnionSet (fromUnionSet),
+                                      IntoUnionMap (intoUnionMap),
+                                      IntoUnionSet (intoUnionSet))
 
 emptyMap :: (FromUnionMap a) => ISL s (a s)
 emptyMap = fromUnionMap <$> unionMap "{}"

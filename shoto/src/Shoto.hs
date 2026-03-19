@@ -7,8 +7,8 @@ module Shoto (
 import           Control.Monad.Except   (MonadError (throwError), runExceptT)
 import           Control.Monad.IO.Class (MonadIO (liftIO))
 import           FrontendIR             (FrontendError, Program, lowerProgram)
-import           ISL                    (AstTree, IslError, runISL)
 import           Polyhedral             (ScheduleOptimization, synthesize)
+import           Polyhedral.Internal    (AstTree, IslError, runISL)
 
 data CompileError
     = CompileFrontendError FrontendError

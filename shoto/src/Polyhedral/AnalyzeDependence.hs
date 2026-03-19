@@ -4,19 +4,20 @@ module Polyhedral.AnalyzeDependence (
     analyzeDependences,
 ) where
 
-import           ISL              (ISL, unionAccessInfoComputeFlow,
-                                   unionAccessInfoFromSink,
-                                   unionAccessInfoSetMaySource,
-                                   unionAccessInfoSetScheduleMap,
-                                   unionFlowGetMayDependence, unionMapSubtract)
-import           Polyhedral.Empty (emptyMap, isEmptyMap, isEmptySet)
-import           Polyhedral.Types (Access (..), Dependencies (..),
-                                   Dependency (..), Domain,
-                                   FromUnionMap (fromUnionMap),
-                                   IntoUnionMap (intoUnionMap),
-                                   PolyhedralModel (..), ProgramOrder (..),
-                                   ReadMap, WriteMap)
-import           Polyhedral.Unite (uniteMap)
+import           Polyhedral.Empty    (emptyMap, isEmptyMap, isEmptySet)
+import           Polyhedral.Internal (ISL, unionAccessInfoComputeFlow,
+                                      unionAccessInfoFromSink,
+                                      unionAccessInfoSetMaySource,
+                                      unionAccessInfoSetScheduleMap,
+                                      unionFlowGetMayDependence,
+                                      unionMapSubtract)
+import           Polyhedral.Types    (Access (..), Dependencies (..),
+                                      Dependency (..), Domain,
+                                      FromUnionMap (fromUnionMap),
+                                      IntoUnionMap (intoUnionMap),
+                                      PolyhedralModel (..), ProgramOrder (..),
+                                      ReadMap, WriteMap)
+import           Polyhedral.Unite    (uniteMap)
 
 mayDeps :: Access t1 s -> Access t2 s -> ProgramOrder s -> ISL s (Dependency s)
 mayDeps source sink po = do

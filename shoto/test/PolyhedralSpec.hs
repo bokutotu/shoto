@@ -1,9 +1,9 @@
 module PolyhedralSpec (spec) where
 
-import           ISL        (AstExpression (..), AstOp (..), AstTree (..),
-                             runISL)
-import           Polyhedral (RawPolyhedralModel (..), ScheduleOptimization (..),
-                             synthesize)
+import           Polyhedral          (RawPolyhedralModel (..),
+                                      ScheduleOptimization (..), synthesize)
+import           Polyhedral.Internal (AstExpression (..), AstOp (..),
+                                      AstTree (..), runISL)
 import           Test.Hspec
 
 spec :: Spec

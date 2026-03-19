@@ -2,16 +2,16 @@
 
 module CodegenSpec (spec) where
 
-import           Codegen            (CodegenError (..), CudaDim (..), generateC,
-                                     generateCuda)
-import           Codegen.C.Ast      (CFunctionName (..), CTensorName (..))
-import           Codegen.CUDA.Ast   (CudaKernelName (..), CudaTensorName (..))
-import           Codegen.GenIR      (GenIRError (..))
-import qualified Data.List.NonEmpty as NE
-import           FrontendIR         (Axis (..), Expr (..), IxExpr (..),
-                                     Program (..), Stmt (..), TensorDecl (..))
-import           ISL                (AstTree)
-import           Shoto              (compile)
+import           Codegen             (CodegenError (..), CudaDim (..),
+                                      generateC, generateCuda)
+import           Codegen.C.Ast       (CFunctionName (..), CTensorName (..))
+import           Codegen.CUDA.Ast    (CudaKernelName (..), CudaTensorName (..))
+import           Codegen.GenIR       (GenIRError (..))
+import qualified Data.List.NonEmpty  as NE
+import           FrontendIR          (Axis (..), Expr (..), IxExpr (..),
+                                      Program (..), Stmt (..), TensorDecl (..))
+import           Polyhedral.Internal (AstTree)
+import           Shoto               (compile)
 import           Test.Hspec
 
 spec :: Spec

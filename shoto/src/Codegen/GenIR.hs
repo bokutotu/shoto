@@ -12,13 +12,13 @@ module Codegen.GenIR (
     buildGenProgram,
 ) where
 
-import qualified Data.List.NonEmpty as NE
-import           Data.String        (IsString (fromString))
-import           FrontendIR.Types   (Axis (..), IxExpr (..), Program (..),
-                                     Stmt (..), iterNameToString,
-                                     paramNameToString)
-import           ISL                (AstExpression (..), AstOp (..),
-                                     AstTree (..))
+import qualified Data.List.NonEmpty  as NE
+import           Data.String         (IsString (fromString))
+import           FrontendIR.Types    (Axis (..), IxExpr (..), Program (..),
+                                      Stmt (..), iterNameToString,
+                                      paramNameToString)
+import           Polyhedral.Internal (AstExpression (..), AstOp (..),
+                                      AstTree (..))
 
 data GenIRError
     = ErrGenExpectedSingleStatement Int

@@ -4,16 +4,16 @@ module Polyhedral.Schedule (
     computeSchedule,
 ) where
 
-import           ISL              (ISL, Schedule, Set,
-                                   scheduleConstraintsComputeSchedule,
-                                   scheduleConstraintsOnDomain,
-                                   scheduleConstraintsSetCoincidence,
-                                   scheduleConstraintsSetContext,
-                                   scheduleConstraintsSetProximity,
-                                   scheduleConstraintsSetValidity)
-import           Polyhedral.Types (Dependencies (..), Domain,
-                                   IntoUnionMap (intoUnionMap),
-                                   IntoUnionSet (intoUnionSet))
+import           Polyhedral.Internal (ISL, Schedule, Set,
+                                      scheduleConstraintsComputeSchedule,
+                                      scheduleConstraintsOnDomain,
+                                      scheduleConstraintsSetCoincidence,
+                                      scheduleConstraintsSetContext,
+                                      scheduleConstraintsSetProximity,
+                                      scheduleConstraintsSetValidity)
+import           Polyhedral.Types    (Dependencies (..), Domain,
+                                      IntoUnionMap (intoUnionMap),
+                                      IntoUnionSet (intoUnionSet))
 
 -- | 依存関係制約からスケジュールを計算
 computeSchedule :: Set s -> Domain s -> Dependencies s -> ISL s (Schedule s)
