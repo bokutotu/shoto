@@ -12,17 +12,21 @@ module Runtime.NVIDIA.Types (
     liftCuda,
 ) where
 
-import           Codegen.CUDA.Ast       (CudaDim)
-import           Control.Monad.Except   (ExceptT, MonadError, runExceptT)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Codegen.CUDA.Ast               (CudaDim)
+import           Control.Monad.Except           (ExceptT, MonadError,
+                                                 runExceptT)
 #ifdef CUDA_RUNTIME
-import           Control.Monad.Trans    (lift)
-import           CUDA                   (CUDA, CudaError (..), runCUDA)
-import           CUDA.Memory            (DevicePtr)
-import           CUDA.Module            (Function, Module)
-import qualified Data.ByteString        as BS
+import           Control.Monad.IO.Class         (MonadIO)
+import           Control.Monad.Trans            (lift)
+import qualified Data.ByteString                as BS
+import           Runtime.NVIDIA.Internal        (CUDA, CudaError (..), runCUDA)
+import           Runtime.NVIDIA.Internal.Memory (DevicePtr)
+import           Runtime.NVIDIA.Internal.Module (Function, Module)
+#else
+import           Control.Monad.IO.Class         (MonadIO, liftIO)
 #endif
-import           Runtime.Types          (KernelSignature, RuntimeError (..))
+import           Runtime.Types                  (KernelSignature,
+                                                 RuntimeError (..))
 
 #ifdef CUDA_RUNTIME
 newtype NVIDIA s a = NVIDIA {unNVIDIA :: ExceptT RuntimeError (CUDA s) a}
@@ -125,7 +129,7 @@ instance Show (DeviceBuffer s) where
         "DeviceBuffer { deviceBufferElements = " <> show deviceBuffer.deviceBufferElements <> " }"
 
 runNVIDIA :: (forall s. NVIDIA s a) -> IO (Either RuntimeError a)
-runNVIDIA action = runExceptT (action.unNVIDIA)
+runNVIDIA action = runExceptT action.unNVIDIA
 
 liftCuda :: IO a -> NVIDIA s a
 liftCuda = liftIO

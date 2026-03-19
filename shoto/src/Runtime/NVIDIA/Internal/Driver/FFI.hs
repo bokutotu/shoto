@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module CUDA.Internal.Driver.FFI (
+module Runtime.NVIDIA.Internal.Driver.FFI (
     CuResult,
     CuDevice,
     CuDevicePtr,
@@ -30,10 +30,10 @@ module CUDA.Internal.Driver.FFI (
     c_cuGetErrorString,
 ) where
 
-import Data.Word (Word64)
-import Foreign.C.String (CString)
-import Foreign.C.Types (CInt (..), CSize (..), CUInt (..))
-import Foreign.Ptr (Ptr)
+import           Data.Word        (Word64)
+import           Foreign.C.String (CString)
+import           Foreign.C.Types  (CInt (..), CSize (..), CUInt (..))
+import           Foreign.Ptr      (Ptr)
 
 type CuResult = CInt
 

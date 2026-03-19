@@ -1,19 +1,19 @@
 {-# LANGUAGE LambdaCase #-}
 
-module CUDASpec (spec) where
+module Runtime.NVIDIA.Internal.CUDASpec (spec) where
 
-import CUDA
-import Control.Monad.IO.Class (liftIO)
-import Data.ByteString qualified as BS
-import Foreign.C.Types (CFloat)
-import Foreign.Marshal.Alloc (free)
-import Foreign.Marshal.Array (mallocArray, newArray, peekArray)
-import Foreign.Storable (sizeOf)
-import Test.Hspec
+import           Control.Monad.IO.Class  (liftIO)
+import qualified Data.ByteString         as BS
+import           Foreign.C.Types         (CFloat)
+import           Foreign.Marshal.Alloc   (free)
+import           Foreign.Marshal.Array   (mallocArray, newArray, peekArray)
+import           Foreign.Storable        (sizeOf)
+import           Runtime.NVIDIA.Internal
+import           Test.Hspec
 
 spec :: Spec
 spec = do
-    describe "CUDA" $ do
+    describe "Runtime.NVIDIA.Internal" $ do
         it "initializes a context and queries compute capability" $ do
             result <- runCUDA computeCapability
             result `shouldSatisfy` \case

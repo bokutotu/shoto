@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module CUDA.Memory (
+module Runtime.NVIDIA.Internal.Memory (
     DevicePtr (..),
     allocBytes,
     freeDevicePtr,
@@ -10,18 +10,15 @@ module CUDA.Memory (
     copyBytesFromDeviceToForeignPtr,
 ) where
 
-import CUDA.Core (
-    CUDA,
-    CudaError (..),
-    expectDriverSuccess,
-    throwCUDA,
- )
-import CUDA.Internal.Driver.FFI
-import Control.Monad.IO.Class (liftIO)
-import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
-import Foreign.Marshal.Alloc (alloca)
-import Foreign.Ptr (Ptr)
-import Foreign.Storable (peek)
+import           Control.Monad.IO.Class             (liftIO)
+import           Foreign.ForeignPtr                 (ForeignPtr, withForeignPtr)
+import           Foreign.Marshal.Alloc              (alloca)
+import           Foreign.Ptr                        (Ptr)
+import           Foreign.Storable                   (peek)
+import           Runtime.NVIDIA.Internal.Core       (CUDA, CudaError (..),
+                                                     expectDriverSuccess,
+                                                     throwCUDA)
+import           Runtime.NVIDIA.Internal.Driver.FFI
 
 newtype DevicePtr s = DevicePtr
     { rawDevicePtr :: CuDevicePtr

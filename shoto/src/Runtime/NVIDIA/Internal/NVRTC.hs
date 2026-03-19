@@ -1,37 +1,29 @@
-module CUDA.NVRTC (
+module Runtime.NVIDIA.Internal.NVRTC (
     compileProgramToPtx,
 ) where
 
-import CUDA.Core (
-    CUDA,
-    CudaError,
-    nvrtcErrorFromResult,
-    throwCUDA,
- )
-import CUDA.Internal.NVRTC.FFI
-import Control.Exception (SomeException, bracket, try)
-import Control.Monad.IO.Class (liftIO)
-import Data.ByteString qualified as BS
-import Data.List (isPrefixOf, nub)
-import Foreign.C.String (CString, withCString)
-import Foreign.C.Types (CInt (..))
-import Foreign.Marshal.Alloc (alloca, allocaBytes)
-import Foreign.Marshal.Array (withArrayLen)
-import Foreign.Marshal.Utils (with)
-import Foreign.Ptr (Ptr, nullPtr)
-import Foreign.Storable (peek)
-import System.Directory (
-    doesDirectoryExist,
-    doesFileExist,
-    listDirectory,
- )
-import System.Environment (lookupEnv, setEnv)
-import System.FilePath ((</>))
-import System.Posix.DynamicLinker (
-    DL,
-    RTLDFlags (RTLD_GLOBAL, RTLD_NOW),
-    dlopen,
- )
+import           Control.Exception                 (SomeException, bracket, try)
+import           Control.Monad.IO.Class            (liftIO)
+import qualified Data.ByteString                   as BS
+import           Data.List                         (isPrefixOf, nub)
+import           Foreign.C.String                  (CString, withCString)
+import           Foreign.C.Types                   (CInt (..))
+import           Foreign.Marshal.Alloc             (alloca, allocaBytes)
+import           Foreign.Marshal.Array             (withArrayLen)
+import           Foreign.Marshal.Utils             (with)
+import           Foreign.Ptr                       (Ptr, nullPtr)
+import           Foreign.Storable                  (peek)
+import           Runtime.NVIDIA.Internal.Core      (CUDA, CudaError,
+                                                    nvrtcErrorFromResult,
+                                                    throwCUDA)
+import           Runtime.NVIDIA.Internal.NVRTC.FFI
+import           System.Directory                  (doesDirectoryExist,
+                                                    listDirectory)
+import           System.Environment                (lookupEnv, setEnv)
+import           System.FilePath                   ((</>))
+import           System.Posix.DynamicLinker        (DL,
+                                                    RTLDFlags (RTLD_GLOBAL, RTLD_NOW),
+                                                    dlopen)
 
 compileProgramToPtx :: String -> String -> [String] -> CUDA s BS.ByteString
 compileProgramToPtx programName source compileOptions = do
@@ -43,8 +35,7 @@ compileProgramToPtxIO programName source compileOptions =
     do
         ensureNvrtcBuiltinsLoaded
         withCreatedProgram programName source $ \rawProgram -> do
-            compileResult <- withCStringArray compileOptions $ \(optionCount, optionVector) ->
-                c_nvrtcCompileProgram rawProgram optionCount optionVector
+            compileResult <- withCStringArray compileOptions $ uncurry (c_nvrtcCompileProgram rawProgram)
             if compileResult /= nvrtcSuccess
                 then do
                     compileLog <- readProgramLog rawProgram
@@ -92,7 +83,7 @@ readProgramLog rawProgram = do
             logBytes <- allocaBytes (fromIntegral logSize) $ \logPtr -> do
                 _ <- c_nvrtcGetProgramLog rawProgram logPtr
                 BS.packCStringLen (logPtr, fromIntegral logSize - 1)
-            Just <$> pure (bytesToString logBytes)
+            pure $ Just $ bytesToString logBytes
 
 readPtx :: RawProgram -> IO BS.ByteString
 readPtx rawProgram = do
@@ -204,12 +195,7 @@ splitOn delimiter input =
 tryLoadBuiltin :: [FilePath] -> IO (Maybe DL)
 tryLoadBuiltin [] = pure Nothing
 tryLoadBuiltin (builtinCandidate : remainingCandidates) = do
-    builtinCandidateExists <- doesFileExist builtinCandidate
-    let candidateToLoad =
-            if builtinCandidateExists
-                then builtinCandidate
-                else builtinCandidate
-    loadResult <- try (dlopen candidateToLoad [RTLD_NOW, RTLD_GLOBAL]) :: IO (Either SomeException DL)
+    loadResult <- try (dlopen builtinCandidate [RTLD_NOW, RTLD_GLOBAL]) :: IO (Either SomeException DL)
     case loadResult of
         Right handle -> pure $ Just handle
         Left _ -> tryLoadBuiltin remainingCandidates

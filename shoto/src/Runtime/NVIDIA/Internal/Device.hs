@@ -1,20 +1,16 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module CUDA.Device (
+module Runtime.NVIDIA.Internal.Device (
     computeCapability,
 ) where
 
-import CUDA.Core (
-    CUDA,
-    Env (..),
-    askEnv,
-    expectDriverSuccess,
- )
-import CUDA.Internal.Driver.FFI
-import Control.Monad.IO.Class (liftIO)
-import Foreign.C.Types (CInt (..))
-import Foreign.Marshal.Alloc (alloca)
-import Foreign.Storable (peek)
+import           Control.Monad.IO.Class             (liftIO)
+import           Foreign.C.Types                    (CInt (..))
+import           Foreign.Marshal.Alloc              (alloca)
+import           Foreign.Storable                   (peek)
+import           Runtime.NVIDIA.Internal.Core       (CUDA, Env (..), askEnv,
+                                                     expectDriverSuccess)
+import           Runtime.NVIDIA.Internal.Driver.FFI
 
 computeCapability :: CUDA s (Int, Int)
 computeCapability = do

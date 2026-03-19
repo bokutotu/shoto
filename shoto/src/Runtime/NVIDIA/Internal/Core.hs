@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedRecordDot        #-}
 {-# LANGUAGE RankNTypes                 #-}
 
-module CUDA.Core (
+module Runtime.NVIDIA.Internal.Core (
     CUDA (..),
     Env (..),
     CudaError (..),
@@ -15,18 +15,18 @@ module CUDA.Core (
     nvrtcErrorFromResult,
 ) where
 
-import           Control.Monad            (when)
-import           Control.Monad.Except     (ExceptT, MonadError, runExceptT,
-                                           throwError)
-import           Control.Monad.IO.Class   (MonadIO, liftIO)
-import           Control.Monad.Reader     (ReaderT, ask, runReaderT)
-import           Control.Monad.Trans      (lift)
-import           CUDA.Internal.Driver.FFI
-import           CUDA.Internal.NVRTC.FFI
-import           Foreign.C.String         (peekCString)
-import           Foreign.Marshal.Alloc    (alloca)
-import           Foreign.Ptr              (nullPtr)
-import           Foreign.Storable         (peek)
+import           Control.Monad                      (when)
+import           Control.Monad.Except               (ExceptT, MonadError,
+                                                     runExceptT, throwError)
+import           Control.Monad.IO.Class             (MonadIO, liftIO)
+import           Control.Monad.Reader               (ReaderT, ask, runReaderT)
+import           Control.Monad.Trans                (lift)
+import           Foreign.C.String                   (peekCString)
+import           Foreign.Marshal.Alloc              (alloca)
+import           Foreign.Ptr                        (nullPtr)
+import           Foreign.Storable                   (peek)
+import           Runtime.NVIDIA.Internal.Driver.FFI
+import           Runtime.NVIDIA.Internal.NVRTC.FFI
 
 data Env = Env
     { cudaContext :: RawContext
@@ -86,7 +86,7 @@ runCUDA action = do
                         (_, rawContext) -> do
                             runResult <-
                                 runReaderT
-                                    (runExceptT (action.unCUDA))
+                                    (runExceptT action.unCUDA)
                                     Env
                                         { cudaContext = rawContext
                                         , cudaDevice = device

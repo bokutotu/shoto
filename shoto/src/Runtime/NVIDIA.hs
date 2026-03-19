@@ -17,29 +17,35 @@ module Runtime.NVIDIA (
     runNvidiaKernelWithHostBuffers,
 ) where
 
-import           Codegen.CUDA.Ast     (CudaDim (..))
-import           Runtime.NVIDIA.Types (CompiledCudaProgram, DeviceBuffer,
-                                       LoadedNvidiaKernel, NVIDIA, runNVIDIA)
+import           Codegen.CUDA.Ast               (CudaDim (..))
+import           Runtime.NVIDIA.Types           (CompiledCudaProgram,
+                                                 DeviceBuffer,
+                                                 LoadedNvidiaKernel, NVIDIA,
+                                                 runNVIDIA)
 
 #ifdef CUDA_RUNTIME
-import           Control.Monad        (unless, zipWithM_)
-import           Control.Monad.Except (MonadError (catchError, throwError))
-import qualified CUDA.Device          as CUDA
-import qualified CUDA.Memory          as CUDA
-import qualified CUDA.Module          as CUDA
-import qualified CUDA.NVRTC           as CUDA
-import           Data.Foldable        (traverse_)
-import           Foreign.C.Types      (CFloat, CInt)
-import           Foreign.Storable     (sizeOf)
-import           Runtime.NVIDIA.Types (CompiledCudaProgram (..),
-                                       DeviceBuffer (..),
-                                       LoadedNvidiaKernel (..), liftCuda)
-import           Runtime.Types        (KernelArg (..), KernelSignature (..),
-                                       RuntimeError (..), TensorBuffer (..))
+import           Control.Monad                  (unless, zipWithM_)
+import           Control.Monad.Except           (MonadError (catchError, throwError))
+import           Data.Foldable                  (traverse_)
+import           Foreign.C.Types                (CFloat, CInt)
+import           Foreign.Storable               (sizeOf)
+import qualified Runtime.NVIDIA.Internal.Device as CUDA
+import qualified Runtime.NVIDIA.Internal.Memory as CUDA
+import qualified Runtime.NVIDIA.Internal.Module as CUDA
+import qualified Runtime.NVIDIA.Internal.NVRTC  as CUDA
+import           Runtime.NVIDIA.Types           (CompiledCudaProgram (..),
+                                                 DeviceBuffer (..),
+                                                 LoadedNvidiaKernel (..),
+                                                 liftCuda)
+import           Runtime.Types                  (KernelArg (..),
+                                                 KernelSignature (..),
+                                                 RuntimeError (..),
+                                                 TensorBuffer (..))
 #else
-import           Control.Monad.Except (throwError)
-import           Runtime.Types        (KernelArg, KernelSignature,
-                                       RuntimeError (..), TensorBuffer)
+import           Control.Monad.Except           (throwError)
+import           Runtime.Types                  (KernelArg, KernelSignature,
+                                                 RuntimeError (..),
+                                                 TensorBuffer)
 #endif
 
 compileCudaProgram :: KernelSignature -> CudaDim -> String -> NVIDIA s CompiledCudaProgram

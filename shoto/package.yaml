@@ -9,11 +9,6 @@ category: Compilers
 
 language: GHC2024
 
-flags:
-  cuda-runtime:
-    manual: true
-    default: false
-
 dependencies:
   - base >= 4.19.1.0
 
@@ -21,6 +16,11 @@ ghc-options: -Wall
 
 library:
   source-dirs: src
+  cpp-options:
+    - -DCUDA_RUNTIME
+  extra-libraries:
+    - cuda
+    - nvrtc
   dependencies:
     - bytestring
     - directory
@@ -31,17 +31,13 @@ library:
     - mtl
     - transformers
     - isl
-  when:
-    - condition: flag(cuda-runtime)
-      cpp-options:
-        - -DCUDA_RUNTIME
-      dependencies:
-        - nvidia-cuda
 
 tests:
   shoto-test:
     main: Spec.hs
     source-dirs: test
+    cpp-options:
+      - -DCUDA_RUNTIME
     build-tools:
       - hspec-discover
     dependencies:
@@ -51,7 +47,3 @@ tests:
       - process
       - bytestring
       - containers
-    when:
-      - condition: flag(cuda-runtime)
-        cpp-options:
-          - -DCUDA_RUNTIME

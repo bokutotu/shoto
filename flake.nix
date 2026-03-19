@@ -84,23 +84,18 @@
         
 
         # hpackでcabalファイルを生成したソースを作成
-        mkProjectSrc = { useCudaProject ? false }:
-          pkgs.runCommand "shoto-src${pkgs.lib.optionalString useCudaProject "-cuda"}" {
+        mkProjectSrc =
+          pkgs.runCommand "shoto-src" {
           nativeBuildInputs = [ pkgs.haskellPackages.hpack ];
         } ''
           cp -r ${srcRoot} $out
           chmod -R +w $out
           cd $out
-          ${pkgs.lib.optionalString useCudaProject ''
-            cp cabal.project.cuda cabal.project
-          ''}
           hpack shoto/
           hpack isl/
-          hpack nvidia-cuda/
         '';
 
-        src = mkProjectSrc {};
-        cudaSrc = mkProjectSrc { useCudaProject = true; };
+        src = mkProjectSrc;
 
         project = pkgs.haskell-nix.project' {
           inherit src;
@@ -109,19 +104,6 @@
             # システムのcudartライブラリを使用
             packages.shoto.components.library.libs = pkgs.lib.mkForce [];
             packages.shoto.components.tests.shoto-test.libs = pkgs.lib.mkForce [];
-            packages.shoto.flags.cuda-runtime = false;
-          }];
-        };
-
-        projectCuda = pkgs.haskell-nix.project' {
-          src = cudaSrc;
-          compiler-nix-name = "ghc912";
-          modules = [{
-            packages.shoto.components.library.libs = pkgs.lib.mkForce [];
-            packages.shoto.components.tests.shoto-test.libs = pkgs.lib.mkForce [];
-            packages.shoto.flags.cuda-runtime = true;
-            packages.nvidia-cuda.components.library.libs = pkgs.lib.mkForce [];
-            packages.nvidia-cuda.components.tests.nvidia-cuda-test.libs = pkgs.lib.mkForce [];
           }];
         };
 
@@ -144,7 +126,7 @@
           pkgs.islGit
         ];
 
-        mkShell = { projectForShell, withCuda ? false }:
+        mkShell = { projectForShell, withCuda ? true }:
           projectForShell.shellFor {
             tools = shellTools;
             buildInputs = baseBuildInputs;
@@ -152,7 +134,7 @@
               # lefthookをインストール
               lefthook install
 
-              export SHOTO_CABAL_PROJECT_FILE="${if withCuda then "cabal.project.cuda" else "cabal.project"}"
+              export SHOTO_CABAL_PROJECT_FILE="cabal.project"
 
               libstdcxx_dir="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
               export LD_LIBRARY_PATH="$libstdcxx_dir:$LD_LIBRARY_PATH"
@@ -187,14 +169,10 @@
       in {
         devShells = {
           default = mkShell { projectForShell = project; };
-        } // pkgs.lib.optionalAttrs isLinux {
-          cuda = mkShell { projectForShell = projectCuda; withCuda = true; };
         };
 
         packages = {
           default = project.hsPkgs.shoto.components.library;
-        } // pkgs.lib.optionalAttrs isLinux {
-          cuda = projectCuda.hsPkgs.shoto.components.library;
         };
       });
 }

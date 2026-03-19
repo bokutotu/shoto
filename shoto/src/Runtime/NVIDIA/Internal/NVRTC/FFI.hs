@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module CUDA.Internal.NVRTC.FFI (
+module Runtime.NVIDIA.Internal.NVRTC.FFI (
     NvrtcResult,
     RawProgram,
     nvrtcSuccess,
@@ -15,9 +15,9 @@ module CUDA.Internal.NVRTC.FFI (
     c_nvrtcGetErrorString,
 ) where
 
-import Foreign.C.String (CString)
-import Foreign.C.Types (CInt (..), CSize (..))
-import Foreign.Ptr (Ptr)
+import           Foreign.C.String (CString)
+import           Foreign.C.Types  (CInt (..), CSize (..))
+import           Foreign.Ptr      (Ptr)
 
 type NvrtcResult = CInt
 

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module CUDA.Module (
+module Runtime.NVIDIA.Internal.Module (
     Module (..),
     Function (..),
     Dim3 (..),
@@ -12,20 +12,20 @@ module CUDA.Module (
     synchronize,
 ) where
 
-import CUDA.Core (CUDA, expectDriverSuccess)
-import CUDA.Internal.Driver.FFI
-import CUDA.Memory (DevicePtr (..))
-import Control.Monad.IO.Class (liftIO)
-import Data.ByteString qualified as BS
-import Data.ByteString.Unsafe qualified as BSU
-import Data.Word (Word32)
-import Foreign.C.String (withCString)
-import Foreign.C.Types (CInt (..), CUInt (..))
-import Foreign.Marshal.Alloc (alloca)
-import Foreign.Marshal.Array (withArray)
-import Foreign.Marshal.Utils (with)
-import Foreign.Ptr (Ptr, castPtr, nullPtr)
-import Foreign.Storable (peek)
+import           Control.Monad.IO.Class             (liftIO)
+import qualified Data.ByteString                    as BS
+import qualified Data.ByteString.Unsafe             as BSU
+import           Data.Word                          (Word32)
+import           Foreign.C.String                   (withCString)
+import           Foreign.C.Types                    (CInt (..), CUInt (..))
+import           Foreign.Marshal.Alloc              (alloca)
+import           Foreign.Marshal.Array              (withArray)
+import           Foreign.Marshal.Utils              (with)
+import           Foreign.Ptr                        (Ptr, castPtr, nullPtr)
+import           Foreign.Storable                   (peek)
+import           Runtime.NVIDIA.Internal.Core       (CUDA, expectDriverSuccess)
+import           Runtime.NVIDIA.Internal.Driver.FFI
+import           Runtime.NVIDIA.Internal.Memory     (DevicePtr (..))
 
 newtype Module s = Module
     { rawModule :: RawModule
