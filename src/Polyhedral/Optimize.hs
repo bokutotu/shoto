@@ -1,19 +1,23 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Polyhedral.Optimize (
     ScheduleOptimization (..),
     applyScheduleOptimizations,
 ) where
 
-import           Control.Monad       (foldM, unless, when)
-import           Data.List           (transpose)
-import           Polyhedral.Internal (ISL, Schedule, ScheduleNode,
-                                      ScheduleNodeType (..),
-                                      scheduleMapScheduleNodeBottomUp,
-                                      scheduleNodeBandNMember,
-                                      scheduleNodeBandPermuteMembers,
-                                      scheduleNodeBandTile, scheduleNodeChild,
-                                      scheduleNodeGetType,
-                                      scheduleNodeNChildren, scheduleNodeParent,
-                                      throwISL)
+import           Control.Monad        (foldM, unless, when)
+import           Control.Monad.Except (catchError, throwError)
+import           Data.List            (transpose)
+import           Polyhedral.Error     (OptimizeError (..), PolyhedralError (..))
+import           Polyhedral.Internal  (ISL, Schedule, ScheduleNode,
+                                       ScheduleNodeType (..),
+                                       scheduleMapScheduleNodeBottomUp,
+                                       scheduleNodeBandNMember,
+                                       scheduleNodeBandPermuteMembers,
+                                       scheduleNodeBandTile, scheduleNodeChild,
+                                       scheduleNodeGetType,
+                                       scheduleNodeNChildren,
+                                       scheduleNodeParent)
 
 data ScheduleOptimization
     = LoopInterchange [Int]
@@ -22,10 +26,17 @@ data ScheduleOptimization
 
 applyScheduleOptimizations :: [ScheduleOptimization] -> Schedule s -> ISL s (Schedule s)
 applyScheduleOptimizations opts sched =
-    foldM
-        (flip applyScheduleOptimization)
-        sched
-        opts
+    catchError
+        ( foldM
+            (flip applyScheduleOptimization)
+            sched
+            opts
+        )
+        ( \case
+            InternalIslError islErr ->
+                throwError (PolyhedralOptimizeError OptimizeInternalFailure (Just islErr))
+            other -> throwError other
+        )
 
 applyScheduleOptimization :: ScheduleOptimization -> Schedule s -> ISL s (Schedule s)
 applyScheduleOptimization (LoopInterchange permutation) sched =
@@ -39,7 +50,7 @@ applyScheduleOptimization (Tile tileSizesByAxis) sched = do
     tileBand levels node = do
         nMember <- scheduleNodeBandNMember node
         unless (nMember == axisCount) $
-            throwISL "applyScheduleOptimization(Tile): band rank mismatch"
+            throwError (PolyhedralOptimizeError (OptimizeBandRankMismatch axisCount nMember) Nothing)
         tileBandMultiLevel levels node
 
 applyToBandNodes ::
@@ -62,25 +73,25 @@ tileBandMultiLevel (sizes : rest) node = do
         _ -> do
             nChildren <- scheduleNodeNChildren outerBand
             when (nChildren /= 1) $
-                throwISL "tileBandMultiLevel: tiled band is expected to have one child"
+                throwError (PolyhedralOptimizeError (OptimizeTiledBandExpectedOneChild nChildren) Nothing)
             inner <- scheduleNodeChild outerBand 0
             innerType <- scheduleNodeGetType inner
             unless (innerType == ScheduleNodeBand) $
-                throwISL "tileBandMultiLevel: tiled band child is expected to be a band"
+                throwError (PolyhedralOptimizeError OptimizeTiledBandChildNotBand Nothing)
             inner' <- tileBandMultiLevel rest inner
             scheduleNodeParent inner'
 
 tileSizesToLevelMajor :: [[Int]] -> ISL s [[Int]]
 tileSizesToLevelMajor [] =
-    throwISL "applyScheduleOptimization(Tile): at least one axis is required"
+    throwError (PolyhedralOptimizeError OptimizeTileNoAxis Nothing)
 tileSizesToLevelMajor ([] : _) =
-    throwISL "applyScheduleOptimization(Tile): at least one tile size per axis is required"
+    throwError (PolyhedralOptimizeError OptimizeTileEmptyLevel Nothing)
 tileSizesToLevelMajor sizesByAxis@(firstAxis : restAxes) = do
     when (any null restAxes) $
-        throwISL "applyScheduleOptimization(Tile): at least one tile size per axis is required"
+        throwError (PolyhedralOptimizeError OptimizeTileEmptyLevel Nothing)
     let levelCount = length firstAxis
     unless (all (\sizes -> length sizes == levelCount) sizesByAxis) $
-        throwISL "applyScheduleOptimization(Tile): all axes must have the same level count"
+        throwError (PolyhedralOptimizeError OptimizeTileLevelCountMismatch Nothing)
     unless (all (all (> 0)) sizesByAxis) $
-        throwISL "applyScheduleOptimization(Tile): tile sizes must be positive"
+        throwError (PolyhedralOptimizeError OptimizeTileNonPositiveSize Nothing)
     pure (transpose sizesByAxis)

@@ -2,6 +2,7 @@ module Polyhedral.OptimizeSpec (spec) where
 
 import           Control.Monad       (void)
 import           Data.Either         (isLeft)
+import           Polyhedral.Error    (OptimizeError (..), PolyhedralError (..))
 import           Polyhedral.Internal (runISL, schedule, scheduleIsEqual)
 import           Polyhedral.Optimize (ScheduleOptimization (..),
                                       applyScheduleOptimizations)
@@ -137,7 +138,9 @@ spec = do
             result <- runISL $ do
                 sched <- schedule $ normalizePrettySchedule inputSchedule
                 void $ applyScheduleOptimizations [Tile [[8, 4], [8]]] sched
-            isLeft result `shouldBe` True
+            result
+                `shouldBe` Left
+                    (PolyhedralOptimizeError OptimizeTileLevelCountMismatch Nothing)
 
 normalizePrettySchedule :: String -> String
 normalizePrettySchedule =

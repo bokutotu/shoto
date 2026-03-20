@@ -1,10 +1,14 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Polyhedral (
     synthesize,
     RawPolyhedralModel (..),
     ScheduleOptimization (..),
 ) where
 
+import           Control.Monad.Except         (catchError, throwError)
 import           Polyhedral.AnalyzeDependence (analyzeDependences)
+import           Polyhedral.Error             (PolyhedralError (..))
 import           Polyhedral.Internal          (AstTree, ISL,
                                                astBuildFromContext,
                                                astBuildNodeFromSchedule,
@@ -21,6 +25,16 @@ synthesize optimizations raw = do
     model@PolyhedralModel{context = ctx, domain = dom} <- parsePolyhedralModel raw
     schedule <- analyzeDependences model >>= computeSchedule ctx dom
     optimizedSchedule <- applyScheduleOptimizations optimizations schedule
-    build <- astBuildFromContext ctx
-    node <- astBuildNodeFromSchedule build optimizedSchedule
-    astNodeToTree node
+    build <- withAstError (astBuildFromContext ctx)
+    node <- withAstError (astBuildNodeFromSchedule build optimizedSchedule)
+    withAstError (astNodeToTree node)
+
+withAstError :: ISL s a -> ISL s a
+withAstError action =
+    catchError
+        action
+        ( \case
+            InternalIslError islErr ->
+                throwError (PolyhedralAstError (Just islErr))
+            other -> throwError other
+        )

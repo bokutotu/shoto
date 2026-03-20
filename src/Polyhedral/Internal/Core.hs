@@ -5,6 +5,7 @@ module Polyhedral.Internal.Core (
     -- * Types
     ISL (..),
     Env (..),
+    PolyhedralError (..),
     IslError (..),
 
     -- * Core Functions
@@ -24,6 +25,7 @@ import qualified Foreign.Concurrent      as FC
 import           Foreign.ForeignPtr      (ForeignPtr, newForeignPtr,
                                           touchForeignPtr, withForeignPtr)
 import           Foreign.Ptr             (Ptr, nullPtr)
+import           Polyhedral.Error
 import           Polyhedral.Internal.FFI
 
 newtype Env = Env (ForeignPtr IslCtx)
@@ -31,16 +33,8 @@ newtype Env = Env (ForeignPtr IslCtx)
 askEnv :: ISL s Env
 askEnv = ISL $ lift ask
 
-newtype ISL s a = ISL {unISL :: ExceptT IslError (ReaderT Env IO) a}
-    deriving (Functor, Applicative, Monad, MonadIO, MonadError IslError)
-
-data IslError = IslError
-    { islFunction :: String
-    , islMessage :: Maybe String
-    , islFile :: Maybe String
-    , islLine :: Maybe Int
-    }
-    deriving (Show, Eq)
+newtype ISL s a = ISL {unISL :: ExceptT PolyhedralError (ReaderT Env IO) a}
+    deriving (Functor, Applicative, Monad, MonadIO, MonadError PolyhedralError)
 
 throwISL :: String -> ISL s a
 throwISL fnName = do
@@ -55,13 +49,17 @@ throwISL fnName = do
         let line = if lineC < 0 then Nothing else Just (fromIntegral lineC)
         pure (msg, file, line)
 
-    throwError $ IslError fnName msg file line
+    throwError $ InternalIslError $ IslError fnName msg file line
 
-runISL :: (forall s. ISL s a) -> IO (Either IslError a)
+runISL :: (forall s. ISL s a) -> IO (Either PolyhedralError a)
 runISL action = do
     rawCtx <- c_ctx_alloc
     if rawCtx == nullPtr
-        then pure $ Left $ IslError "isl_ctx_alloc" (Just "Failed to allocate context") Nothing Nothing
+        then
+            pure $
+                Left $
+                    InternalIslError $
+                        IslError "isl_ctx_alloc" (Just "Failed to allocate context") Nothing Nothing
         else do
             ctxFP <- newForeignPtr p_ctx_free rawCtx
             runReaderT (runExceptT (unISL action)) (Env ctxFP)

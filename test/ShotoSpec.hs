@@ -7,8 +7,10 @@ import           FrontendIR          (Axis (..), Expr (..), FrontendError (..),
                                       IxExpr (..), Program (..), Stmt (..),
                                       TensorDecl (..))
 import           Polyhedral          (ScheduleOptimization (..))
+import           Polyhedral.Error    (IslError (..), OptimizeError (..),
+                                      PolyhedralError (..))
 import           Polyhedral.Internal (AstExpression (..), AstOp (..),
-                                      AstTree (..), IslError (..))
+                                      AstTree (..))
 import           Shoto               (CompileError (..), compile)
 import           Test.Hspec
 
@@ -72,7 +74,7 @@ spec = do
             result <- compile [] invalid
             result `shouldBe` Left (CompileFrontendError (ErrStoreIndexMismatch ["i"] ["j"]))
 
-        it "returns ISL errors as CompileIslError" $ do
+        it "returns Polyhedral errors as CompilePolyhedralError" $ do
             let front =
                     Program
                         { axes =
@@ -95,14 +97,11 @@ spec = do
 
             result <- compile [Tile []] front
 
-            let actualFunction =
-                    case result of
-                        Left (CompileIslError islErr) -> Just (islFunction islErr)
-                        _ -> Nothing
+            result
+                `shouldBe` Left
+                    (CompilePolyhedralError (PolyhedralOptimizeError OptimizeTileNoAxis Nothing))
 
-            actualFunction `shouldBe` Just "applyScheduleOptimization(Tile): at least one axis is required"
-
-        it "keeps ISL error payload" $ do
+        it "keeps internal ISL payload inside typed optimize errors" $ do
             let front =
                     Program
                         { axes =
@@ -123,11 +122,14 @@ spec = do
                                 ]
                         }
 
-            result <- compile [Tile []] front
+            result <- compile [LoopInterchange [1, 1]] front
 
             let payloadIsPresent =
                     case result of
-                        Left (CompileIslError IslError{islFunction = fn}) -> not (null fn)
+                        Left
+                            ( CompilePolyhedralError
+                                    (PolyhedralOptimizeError OptimizeInternalFailure (Just IslError{islFunction = fn}))
+                                ) -> not (null fn)
                         _ -> False
 
             payloadIsPresent `shouldBe` True

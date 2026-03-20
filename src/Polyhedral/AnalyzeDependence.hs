@@ -1,23 +1,26 @@
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Polyhedral.AnalyzeDependence (
     analyzeDependences,
 ) where
 
-import           Polyhedral.Empty    (emptyMap, isEmptyMap, isEmptySet)
-import           Polyhedral.Internal (ISL, unionAccessInfoComputeFlow,
-                                      unionAccessInfoFromSink,
-                                      unionAccessInfoSetMaySource,
-                                      unionAccessInfoSetScheduleMap,
-                                      unionFlowGetMayDependence,
-                                      unionMapSubtract)
-import           Polyhedral.Types    (Access (..), Dependencies (..),
-                                      Dependency (..), Domain,
-                                      FromUnionMap (fromUnionMap),
-                                      IntoUnionMap (intoUnionMap),
-                                      PolyhedralModel (..), ProgramOrder (..),
-                                      ReadMap, WriteMap)
-import           Polyhedral.Unite    (uniteMap)
+import           Control.Monad.Except (catchError, throwError)
+import           Polyhedral.Empty     (emptyMap, isEmptyMap, isEmptySet)
+import           Polyhedral.Error     (PolyhedralError (..))
+import           Polyhedral.Internal  (ISL, unionAccessInfoComputeFlow,
+                                       unionAccessInfoFromSink,
+                                       unionAccessInfoSetMaySource,
+                                       unionAccessInfoSetScheduleMap,
+                                       unionFlowGetMayDependence,
+                                       unionMapSubtract)
+import           Polyhedral.Types     (Access (..), Dependencies (..),
+                                       Dependency (..), Domain,
+                                       FromUnionMap (fromUnionMap),
+                                       IntoUnionMap (intoUnionMap),
+                                       PolyhedralModel (..), ProgramOrder (..),
+                                       ReadMap, WriteMap)
+import           Polyhedral.Unite     (uniteMap)
 
 mayDeps :: Access t1 s -> Access t2 s -> ProgramOrder s -> ISL s (Dependency s)
 mayDeps source sink po = do
@@ -51,23 +54,32 @@ reductionCarriedDeps dom redRead redWrite po = do
 
 -- | 多面体モデルから依存関係制約を解析
 analyzeDependences :: forall s. PolyhedralModel s -> ISL s (Dependencies s)
-analyzeDependences model = do
-    raw <- mayDeps model.writeAccess model.readAccess model.programOrder
-    waw <- mayDeps model.writeAccess model.writeAccess model.programOrder
-    war <- mayDeps model.readAccess model.writeAccess model.programOrder
-    allDeps <- (uniteMap raw waw :: ISL s (Dependency s)) >>= uniteMap war :: ISL s (Dependency s)
-    reductionCarried <-
-        reductionCarriedDeps
-            model.reductionDomain
-            model.reductionRead
-            model.reductionWrite
-            model.programOrder
-    validityNoReduction <-
-        fromUnionMap
-            <$> unionMapSubtract (intoUnionMap allDeps) (intoUnionMap reductionCarried)
-    prox <- uniteMap raw reductionCarried
-    pure
-        Dependencies
-            { legality = validityNoReduction
-            , proximity = prox
-            }
+analyzeDependences model =
+    catchError
+        runAnalyzeDependences
+        ( \case
+            InternalIslError islErr ->
+                throwError (PolyhedralDependenceError (Just islErr))
+            other -> throwError other
+        )
+  where
+    runAnalyzeDependences = do
+        raw <- mayDeps model.writeAccess model.readAccess model.programOrder
+        waw <- mayDeps model.writeAccess model.writeAccess model.programOrder
+        war <- mayDeps model.readAccess model.writeAccess model.programOrder
+        allDeps <- (uniteMap raw waw :: ISL s (Dependency s)) >>= uniteMap war :: ISL s (Dependency s)
+        reductionCarried <-
+            reductionCarriedDeps
+                model.reductionDomain
+                model.reductionRead
+                model.reductionWrite
+                model.programOrder
+        validityNoReduction <-
+            fromUnionMap
+                <$> unionMapSubtract (intoUnionMap allDeps) (intoUnionMap reductionCarried)
+        prox <- uniteMap raw reductionCarried
+        pure
+            Dependencies
+                { legality = validityNoReduction
+                , proximity = prox
+                }

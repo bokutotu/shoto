@@ -3,6 +3,7 @@ module Polyhedral.Internal (
     ISL,
     runISL,
     throwISL,
+    PolyhedralError (..),
     IslError (..),
 
     -- * Modules
@@ -17,6 +18,7 @@ module Polyhedral.Internal (
 
 import           Polyhedral.Internal.Ast
 import           Polyhedral.Internal.Core                (ISL, IslError (..),
+                                                          PolyhedralError (..),
                                                           runISL, throwISL)
 import           Polyhedral.Internal.Flow
 import           Polyhedral.Internal.Map
