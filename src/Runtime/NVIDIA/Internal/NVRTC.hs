@@ -13,10 +13,11 @@ import           Foreign.Marshal.Array             (withArrayLen)
 import           Foreign.Marshal.Utils             (with)
 import           Foreign.Ptr                       (Ptr, nullPtr)
 import           Foreign.Storable                  (peek)
-import           Runtime.NVIDIA.Internal.Core      (CUDA, CudaError,
+import           Runtime.NVIDIA.Internal.Core      (NVIDIA,
                                                     nvrtcErrorFromResult,
-                                                    throwCUDA)
+                                                    throwNVIDIA)
 import           Runtime.NVIDIA.Internal.NVRTC.FFI
+import           Runtime.Types                     (RuntimeError)
 import           System.Directory                  (doesDirectoryExist,
                                                     listDirectory)
 import           System.Environment                (lookupEnv, setEnv)
@@ -25,12 +26,12 @@ import           System.Posix.DynamicLinker        (DL,
                                                     RTLDFlags (RTLD_GLOBAL, RTLD_NOW),
                                                     dlopen)
 
-compileProgramToPtx :: String -> String -> [String] -> CUDA s BS.ByteString
+compileProgramToPtx :: String -> String -> [String] -> NVIDIA s BS.ByteString
 compileProgramToPtx programName source compileOptions = do
     result <- liftIO $ compileProgramToPtxIO programName source compileOptions
-    either throwCUDA pure result
+    either throwNVIDIA pure result
 
-compileProgramToPtxIO :: String -> String -> [String] -> IO (Either CudaError BS.ByteString)
+compileProgramToPtxIO :: String -> String -> [String] -> IO (Either RuntimeError BS.ByteString)
 compileProgramToPtxIO programName source compileOptions =
     do
         ensureNvrtcBuiltinsLoaded

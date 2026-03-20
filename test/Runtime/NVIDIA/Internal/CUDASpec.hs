@@ -15,13 +15,13 @@ spec :: Spec
 spec = do
     describe "Runtime.NVIDIA.Internal" $ do
         it "initializes a context and queries compute capability" $ do
-            result <- runCUDA computeCapability
+            result <- runNVIDIA computeCapability
             result `shouldSatisfy` \case
                 Right (major, minor) -> major > 0 && minor >= 0
                 Left _ -> False
 
         it "compiles a CUDA kernel to PTX with NVRTC" $ do
-            result <- runCUDA $ do
+            result <- runNVIDIA $ do
                 (major, minor) <- computeCapability
                 compileProgramToPtx
                     "shoto_test.cu"
@@ -41,7 +41,7 @@ spec = do
             let inputValues = [1, 2, 3, 4 :: CFloat]
                 byteCount = length inputValues * sizeOf (undefined :: CFloat)
 
-            result <- runCUDA $ do
+            result <- runNVIDIA $ do
                 devicePtr <- allocBytes byteCount
                 inputPtr <- liftIO $ newArray inputValues
                 outputPtr <- liftIO $ mallocArray (length inputValues)

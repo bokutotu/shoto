@@ -8,18 +8,18 @@ import           Control.Monad.IO.Class             (liftIO)
 import           Foreign.C.Types                    (CInt (..))
 import           Foreign.Marshal.Alloc              (alloca)
 import           Foreign.Storable                   (peek)
-import           Runtime.NVIDIA.Internal.Core       (CUDA, Env (..), askEnv,
+import           Runtime.NVIDIA.Internal.Core       (Env (..), NVIDIA, askEnv,
                                                      expectDriverSuccess)
 import           Runtime.NVIDIA.Internal.Driver.FFI
 
-computeCapability :: CUDA s (Int, Int)
+computeCapability :: NVIDIA s (Int, Int)
 computeCapability = do
     env <- askEnv
     major <- queryDeviceAttribute cuDeviceAttributeComputeCapabilityMajor env.cudaDevice
     minor <- queryDeviceAttribute cuDeviceAttributeComputeCapabilityMinor env.cudaDevice
     pure (fromIntegral major, fromIntegral minor)
 
-queryDeviceAttribute :: CInt -> CuDevice -> CUDA s CInt
+queryDeviceAttribute :: CInt -> CuDevice -> NVIDIA s CInt
 queryDeviceAttribute attribute device = do
     (result, value) <-
         liftIO $

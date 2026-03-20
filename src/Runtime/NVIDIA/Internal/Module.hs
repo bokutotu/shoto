@@ -23,7 +23,8 @@ import           Foreign.Marshal.Array              (withArray)
 import           Foreign.Marshal.Utils              (with)
 import           Foreign.Ptr                        (Ptr, castPtr, nullPtr)
 import           Foreign.Storable                   (peek)
-import           Runtime.NVIDIA.Internal.Core       (CUDA, expectDriverSuccess)
+import           Runtime.NVIDIA.Internal.Core       (NVIDIA,
+                                                     expectDriverSuccess)
 import           Runtime.NVIDIA.Internal.Driver.FFI
 import           Runtime.NVIDIA.Internal.Memory     (DevicePtr (..))
 
@@ -51,7 +52,7 @@ data KernelArg s
     = KernelArgInt Int
     | KernelArgDevicePtr (DevicePtr s)
 
-loadModuleData :: BS.ByteString -> CUDA s (Module s)
+loadModuleData :: BS.ByteString -> NVIDIA s (Module s)
 loadModuleData imageBytes = do
     (result, rawModule) <-
         liftIO $
@@ -63,12 +64,12 @@ loadModuleData imageBytes = do
     expectDriverSuccess "cuModuleLoadData" result
     pure Module{rawModule}
 
-unloadModule :: Module s -> CUDA s ()
+unloadModule :: Module s -> NVIDIA s ()
 unloadModule loadedModule =
     expectDriverSuccess "cuModuleUnload"
         =<< liftIO (c_cuModuleUnload loadedModule.rawModule)
 
-getFunction :: Module s -> String -> CUDA s (Function s)
+getFunction :: Module s -> String -> NVIDIA s (Function s)
 getFunction loadedModule symbolName = do
     (result, rawFunction) <-
         liftIO $
@@ -80,7 +81,7 @@ getFunction loadedModule symbolName = do
     expectDriverSuccess "cuModuleGetFunction" result
     pure Function{rawFunction, ownerModule = loadedModule}
 
-launchKernel :: Function s -> Dim3 -> Dim3 -> [KernelArg s] -> CUDA s ()
+launchKernel :: Function s -> Dim3 -> Dim3 -> [KernelArg s] -> NVIDIA s ()
 launchKernel function gridDim blockDim kernelArgs = do
     result <-
         liftIO $
@@ -100,7 +101,7 @@ launchKernel function gridDim blockDim kernelArgs = do
                         nullPtr
     expectDriverSuccess "cuLaunchKernel" result
 
-synchronize :: CUDA s ()
+synchronize :: NVIDIA s ()
 synchronize =
     expectDriverSuccess "cuCtxSynchronize"
         =<< liftIO c_cuCtxSynchronize

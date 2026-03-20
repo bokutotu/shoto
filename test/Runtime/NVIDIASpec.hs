@@ -1,9 +1,7 @@
-{-# LANGUAGE CPP        #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Runtime.NVIDIASpec (spec) where
 
-#ifdef CUDA_RUNTIME
 import           Codegen        (CudaDim (..))
 import           Runtime.NVIDIA (allocateDeviceBuffer, compileCudaProgram,
                                  downloadTensorBuffer, freeDeviceBuffer,
@@ -14,12 +12,8 @@ import           Runtime.Types  (KernelArg (..), KernelSignature (..),
                                  RuntimeError (..), emptyTensorBuffer,
                                  readTensorBuffer, tensorBufferFromList)
 import           Test.Hspec
-#else
-import           Test.Hspec     (Spec)
-#endif
 
 spec :: Spec
-#ifdef CUDA_RUNTIME
 spec = do
     describe "Runtime.NVIDIA" $ do
         it "compiles and runs a copy kernel with host-buffer staging" $ do
@@ -144,6 +138,3 @@ addKernel =
 malformedKernel :: String
 malformedKernel =
     "extern \"C\" __global__ void shoto_kernel_cuda(int N, float* A, float* B) { this is not valid CUDA; }"
-#else
-spec = pure ()
-#endif

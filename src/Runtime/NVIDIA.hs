@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Runtime.NVIDIA (
@@ -18,12 +17,6 @@ module Runtime.NVIDIA (
 ) where
 
 import           Codegen.CUDA.Ast               (CudaDim (..))
-import           Runtime.NVIDIA.Types           (CompiledCudaProgram,
-                                                 DeviceBuffer,
-                                                 LoadedNvidiaKernel, NVIDIA,
-                                                 runNVIDIA)
-
-#ifdef CUDA_RUNTIME
 import           Control.Monad                  (unless, zipWithM_)
 import           Control.Monad.Except           (MonadError (catchError, throwError))
 import           Data.Foldable                  (traverse_)
@@ -36,38 +29,26 @@ import qualified Runtime.NVIDIA.Internal.NVRTC  as CUDA
 import           Runtime.NVIDIA.Types           (CompiledCudaProgram (..),
                                                  DeviceBuffer (..),
                                                  LoadedNvidiaKernel (..),
-                                                 liftCuda)
+                                                 NVIDIA, runNVIDIA)
 import           Runtime.Types                  (KernelArg (..),
                                                  KernelSignature (..),
                                                  RuntimeError (..),
                                                  TensorBuffer (..))
-#else
-import           Control.Monad.Except           (throwError)
-import           Runtime.Types                  (KernelArg, KernelSignature,
-                                                 RuntimeError (..),
-                                                 TensorBuffer)
-#endif
 
 compileCudaProgram :: KernelSignature -> CudaDim -> String -> NVIDIA s CompiledCudaProgram
-#ifdef CUDA_RUNTIME
 compileCudaProgram kernelSignature compiledCudaDim source = do
-    (major, minor) <- liftCuda CUDA.computeCapability
+    (major, minor) <- CUDA.computeCapability
     let compiledPtxOptions =
             [ "--gpu-architecture=compute_" <> show major <> show minor
             , "--std=c++11"
             ]
-    compiledPtx <- liftCuda $ CUDA.compileProgramToPtx "shoto-runtime.cu" source compiledPtxOptions
+    compiledPtx <- CUDA.compileProgramToPtx "shoto-runtime.cu" source compiledPtxOptions
     pure CompiledCudaProgram{compiledPtx, compiledKernelSignature = kernelSignature, compiledCudaDim}
-#else
-compileCudaProgram _ _ _ =
-    throwError $ ErrRuntimeCudaUnavailable "compileCudaProgram"
-#endif
 
 loadNvidiaKernel :: CompiledCudaProgram -> NVIDIA s (LoadedNvidiaKernel s)
-#ifdef CUDA_RUNTIME
 loadNvidiaKernel compiledCudaProgram = do
-    loadedModule <- liftCuda $ CUDA.loadModuleData compiledCudaProgram.compiledPtx
-    loadedFunction <- liftCuda $ CUDA.getFunction loadedModule "shoto_kernel_cuda"
+    loadedModule <- CUDA.loadModuleData compiledCudaProgram.compiledPtx
+    loadedFunction <- CUDA.getFunction loadedModule "shoto_kernel_cuda"
     pure
         LoadedNvidiaKernel
             { loadedKernelSignature = compiledCudaProgram.compiledKernelSignature
@@ -75,35 +56,20 @@ loadNvidiaKernel compiledCudaProgram = do
             , loadedModule
             , loadedFunction
             }
-#else
-loadNvidiaKernel _ =
-    throwError $ ErrRuntimeCudaUnavailable "loadNvidiaKernel"
-#endif
 
 allocateDeviceBuffer :: Int -> NVIDIA s (DeviceBuffer s)
-#ifdef CUDA_RUNTIME
 allocateDeviceBuffer deviceBufferElements
     | deviceBufferElements < 0 =
         throwError $ ErrRuntimeInvalidDeviceBufferElements deviceBufferElements
     | otherwise = do
-        deviceBufferPtr <- liftCuda $ CUDA.allocBytes (allocationByteCount deviceBufferElements)
+        deviceBufferPtr <- CUDA.allocBytes (allocationByteCount deviceBufferElements)
         pure DeviceBuffer{deviceBufferPtr, deviceBufferElements}
-#else
-allocateDeviceBuffer _ =
-    throwError $ ErrRuntimeCudaUnavailable "allocateDeviceBuffer"
-#endif
 
 freeDeviceBuffer :: DeviceBuffer s -> NVIDIA s ()
-#ifdef CUDA_RUNTIME
 freeDeviceBuffer deviceBuffer =
-    liftCuda $ CUDA.freeDevicePtr deviceBuffer.deviceBufferPtr
-#else
-freeDeviceBuffer _ =
-    throwError $ ErrRuntimeCudaUnavailable "freeDeviceBuffer"
-#endif
+    CUDA.freeDevicePtr deviceBuffer.deviceBufferPtr
 
 uploadTensorBuffer :: TensorBuffer -> DeviceBuffer s -> NVIDIA s ()
-#ifdef CUDA_RUNTIME
 uploadTensorBuffer tensorBuffer deviceBuffer
     | deviceBuffer.deviceBufferElements < tensorBuffer.tensorElements =
         throwError $
@@ -111,18 +77,12 @@ uploadTensorBuffer tensorBuffer deviceBuffer
                 deviceBuffer.deviceBufferElements
                 tensorBuffer.tensorElements
     | otherwise =
-        liftCuda $
-            CUDA.copyBytesToDeviceFromForeignPtr
-                tensorBuffer.tensorData
-                (tensorByteCount tensorBuffer.tensorElements)
-                deviceBuffer.deviceBufferPtr
-#else
-uploadTensorBuffer _ _ =
-    throwError $ ErrRuntimeCudaUnavailable "uploadTensorBuffer"
-#endif
+        CUDA.copyBytesToDeviceFromForeignPtr
+            tensorBuffer.tensorData
+            (tensorByteCount tensorBuffer.tensorElements)
+            deviceBuffer.deviceBufferPtr
 
 downloadTensorBuffer :: DeviceBuffer s -> TensorBuffer -> NVIDIA s ()
-#ifdef CUDA_RUNTIME
 downloadTensorBuffer deviceBuffer tensorBuffer
     | tensorBuffer.tensorElements < deviceBuffer.deviceBufferElements =
         throwError $
@@ -130,18 +90,12 @@ downloadTensorBuffer deviceBuffer tensorBuffer
                 tensorBuffer.tensorElements
                 deviceBuffer.deviceBufferElements
     | otherwise =
-        liftCuda $
-            CUDA.copyBytesFromDeviceToForeignPtr
-                deviceBuffer.deviceBufferPtr
-                (tensorByteCount deviceBuffer.deviceBufferElements)
-                tensorBuffer.tensorData
-#else
-downloadTensorBuffer _ _ =
-    throwError $ ErrRuntimeCudaUnavailable "downloadTensorBuffer"
-#endif
+        CUDA.copyBytesFromDeviceToForeignPtr
+            deviceBuffer.deviceBufferPtr
+            (tensorByteCount deviceBuffer.deviceBufferElements)
+            tensorBuffer.tensorData
 
 runNvidiaKernel :: LoadedNvidiaKernel s -> Int -> Int -> [DeviceBuffer s] -> NVIDIA s ()
-#ifdef CUDA_RUNTIME
 runNvidiaKernel loadedNvidiaKernel threadBlockSize extentValue deviceBuffers = do
     validateLaunch loadedNvidiaKernel.loadedKernelSignature threadBlockSize extentValue deviceBuffers
     let gridDim =
@@ -155,15 +109,10 @@ runNvidiaKernel loadedNvidiaKernel threadBlockSize extentValue deviceBuffers = d
         kernelArgs =
             CUDA.KernelArgInt extentValue
                 : (CUDA.KernelArgDevicePtr . (.deviceBufferPtr) <$> deviceBuffers)
-    liftCuda $ CUDA.launchKernel loadedNvidiaKernel.loadedFunction gridDim blockDim kernelArgs
-    liftCuda CUDA.synchronize
-#else
-runNvidiaKernel _ _ _ _ =
-    throwError $ ErrRuntimeCudaUnavailable "runNvidiaKernel"
-#endif
+    CUDA.launchKernel loadedNvidiaKernel.loadedFunction gridDim blockDim kernelArgs
+    CUDA.synchronize
 
 runNvidiaKernelWithHostBuffers :: LoadedNvidiaKernel s -> Int -> [KernelArg] -> NVIDIA s ()
-#ifdef CUDA_RUNTIME
 runNvidiaKernelWithHostBuffers loadedNvidiaKernel threadBlockSize kernelArgs = do
     extentValue <-
         either throwError pure $ validateHostKernelArgs loadedNvidiaKernel.loadedKernelSignature kernelArgs
@@ -174,14 +123,9 @@ runNvidiaKernelWithHostBuffers loadedNvidiaKernel threadBlockSize kernelArgs = d
     (runNvidiaKernel loadedNvidiaKernel threadBlockSize extentValue deviceBuffers >> downloadAllBuffers)
         `catchError` (\runtimeError -> freeAllBuffers >> throwError runtimeError)
     freeAllBuffers
-#else
-runNvidiaKernelWithHostBuffers _ _ _ =
-    throwError $ ErrRuntimeCudaUnavailable "runNvidiaKernelWithHostBuffers"
-#endif
 
-#ifdef CUDA_RUNTIME
 allocateAndUploadAll :: [TensorBuffer] -> NVIDIA s [DeviceBuffer s]
-allocateAndUploadAll tensorBuffers = go [] tensorBuffers
+allocateAndUploadAll = go []
   where
     go reversedDeviceBuffers [] =
         pure $ reverse reversedDeviceBuffers
@@ -243,7 +187,7 @@ validateHostKernelArgs kernelSignature kernelArgs = do
         then Left $ ErrRuntimeExtentOutOfRange extentValue
         else Right ()
 
-    zipWithM_Either (validateTensorArg extentValue) [1 :: Int ..] (drop 1 kernelArgs)
+    zipWithMEither (validateTensorArg extentValue) [1 :: Int ..] (drop 1 kernelArgs)
     pure extentValue
 
 validateTensorArg :: Int -> Int -> KernelArg -> Either RuntimeError ()
@@ -304,7 +248,5 @@ unlessEither condition err =
         then Right ()
         else Left err
 
-zipWithM_Either :: (a -> b -> Either e ()) -> [a] -> [b] -> Either e ()
-zipWithM_Either fn leftValues rightValues =
-    sequence_ $ zipWith fn leftValues rightValues
-#endif
+zipWithMEither :: (a -> b -> Either e ()) -> [a] -> [b] -> Either e ()
+zipWithMEither = zipWithM_

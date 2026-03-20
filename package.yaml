@@ -16,8 +16,6 @@ ghc-options: -Wall
 
 library:
   source-dirs: src
-  cpp-options:
-    - -DCUDA_RUNTIME
   extra-libraries:
     - isl
     - cuda
@@ -40,8 +38,6 @@ tests:
   shoto-test:
     main: Spec.hs
     source-dirs: test
-    cpp-options:
-      - -DCUDA_RUNTIME
     build-tools:
       - hspec-discover
     dependencies:

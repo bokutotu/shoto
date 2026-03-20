@@ -43,7 +43,6 @@ data RuntimeError
     = ErrRuntimeGccFailed FilePath ExitCode String String
     | ErrRuntimeLoadFailed FilePath String
     | ErrRuntimeSymbolFailed FilePath String String
-    | ErrRuntimeCudaUnavailable String
     | ErrRuntimeArgCountMismatch Int Int
     | ErrRuntimeExpectedExtentArg
     | ErrRuntimeExpectedTensorArg Int
@@ -57,6 +56,7 @@ data RuntimeError
     | ErrRuntimeHostBufferTooSmall Int Int
     | ErrRuntimeCudaDriverError String Int (Maybe String) (Maybe String)
     | ErrRuntimeCudaNvrtcError String Int (Maybe String) (Maybe String)
+    | ErrRuntimeCudaUsageError String
     deriving (Eq, Show)
 
 emptyTensorBuffer :: Int -> IO TensorBuffer

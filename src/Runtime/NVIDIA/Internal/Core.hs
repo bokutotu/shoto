@@ -3,11 +3,10 @@
 {-# LANGUAGE RankNTypes                 #-}
 
 module Runtime.NVIDIA.Internal.Core (
-    CUDA (..),
+    NVIDIA (..),
     Env (..),
-    CudaError (..),
-    runCUDA,
-    throwCUDA,
+    runNVIDIA,
+    throwNVIDIA,
     askEnv,
     expectDriverSuccess,
     expectNvrtcSuccess,
@@ -27,39 +26,24 @@ import           Foreign.Ptr                        (nullPtr)
 import           Foreign.Storable                   (peek)
 import           Runtime.NVIDIA.Internal.Driver.FFI
 import           Runtime.NVIDIA.Internal.NVRTC.FFI
+import           Runtime.Types                      (RuntimeError (..))
 
 data Env = Env
     { cudaContext :: RawContext
     , cudaDevice :: CuDevice
     }
 
-newtype CUDA s a = CUDA {unCUDA :: ExceptT CudaError (ReaderT Env IO) a}
-    deriving (Functor, Applicative, Monad, MonadIO, MonadError CudaError)
+newtype NVIDIA s a = NVIDIA {unNVIDIA :: ExceptT RuntimeError (ReaderT Env IO) a}
+    deriving (Functor, Applicative, Monad, MonadIO, MonadError RuntimeError)
 
-data CudaError
-    = CudaDriverError
-        { cudaFunction :: String
-        , cudaCode :: Int
-        , cudaName :: Maybe String
-        , cudaMessage :: Maybe String
-        }
-    | CudaNvrtcError
-        { cudaFunction :: String
-        , cudaCode :: Int
-        , cudaMessage :: Maybe String
-        , cudaLog :: Maybe String
-        }
-    | CudaUsageError String
-    deriving (Eq, Show)
+askEnv :: NVIDIA s Env
+askEnv = NVIDIA $ lift ask
 
-askEnv :: CUDA s Env
-askEnv = CUDA $ lift ask
+throwNVIDIA :: RuntimeError -> NVIDIA s a
+throwNVIDIA = throwError
 
-throwCUDA :: CudaError -> CUDA s a
-throwCUDA = throwError
-
-runCUDA :: (forall s. CUDA s a) -> IO (Either CudaError a)
-runCUDA action = do
+runNVIDIA :: (forall s. NVIDIA s a) -> IO (Either RuntimeError a)
+runNVIDIA action = do
     initResult <- c_cuInit 0
     if initResult /= cuSuccess
         then Left <$> driverErrorFromResult "cuInit" initResult
@@ -86,7 +70,7 @@ runCUDA action = do
                         (_, rawContext) -> do
                             runResult <-
                                 runReaderT
-                                    (runExceptT action.unCUDA)
+                                    (runExceptT action.unNVIDIA)
                                     Env
                                         { cudaContext = rawContext
                                         , cudaDevice = device
@@ -99,42 +83,40 @@ runCUDA action = do
                                     | otherwise ->
                                         Left <$> driverErrorFromResult "cuCtxDestroy_v2" destroyResult
 
-expectDriverSuccess :: String -> CuResult -> CUDA s ()
+expectDriverSuccess :: String -> CuResult -> NVIDIA s ()
 expectDriverSuccess fnName result =
     when (result /= cuSuccess) $
-        liftIO (driverErrorFromResult fnName result) >>= throwCUDA
+        liftIO (driverErrorFromResult fnName result) >>= throwNVIDIA
 
-expectNvrtcSuccess :: String -> NvrtcResult -> Maybe String -> CUDA s ()
+expectNvrtcSuccess :: String -> NvrtcResult -> Maybe String -> NVIDIA s ()
 expectNvrtcSuccess fnName result compileLog =
     when (result /= nvrtcSuccess) $
-        liftIO (nvrtcErrorFromResult fnName result compileLog) >>= throwCUDA
+        liftIO (nvrtcErrorFromResult fnName result compileLog) >>= throwNVIDIA
 
-driverErrorFromResult :: String -> CuResult -> IO CudaError
+driverErrorFromResult :: String -> CuResult -> IO RuntimeError
 driverErrorFromResult fnName result = do
     cudaName <- lookupDriverErrorString c_cuGetErrorName result
     cudaMessage <- lookupDriverErrorString c_cuGetErrorString result
-    pure
-        CudaDriverError
-            { cudaFunction = fnName
-            , cudaCode = fromIntegral result
-            , cudaName
-            , cudaMessage
-            }
+    pure $
+        ErrRuntimeCudaDriverError
+            fnName
+            (fromIntegral result)
+            cudaName
+            cudaMessage
 
-nvrtcErrorFromResult :: String -> NvrtcResult -> Maybe String -> IO CudaError
+nvrtcErrorFromResult :: String -> NvrtcResult -> Maybe String -> IO RuntimeError
 nvrtcErrorFromResult fnName result compileLog = do
     messagePtr <- c_nvrtcGetErrorString result
     cudaMessage <-
         if messagePtr == nullPtr
             then pure Nothing
             else Just <$> peekCString messagePtr
-    pure
-        CudaNvrtcError
-            { cudaFunction = fnName
-            , cudaCode = fromIntegral result
-            , cudaMessage
-            , cudaLog = compileLog
-            }
+    pure $
+        ErrRuntimeCudaNvrtcError
+            fnName
+            (fromIntegral result)
+            cudaMessage
+            compileLog
 
 lookupDriverErrorString ::
     (CuResult -> CStringResultPtr -> IO CuResult) ->
