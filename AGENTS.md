@@ -1,6 +1,6 @@
 ## Environment
 
-- Work inside `nix develop`.
+- managed by `nix`
 - `lefthook` runs `./format.sh` and `cabal test all` on pre-commit for touched Haskell files.
 - `nix develop` uses the system CUDA installation for builds and tests.
 

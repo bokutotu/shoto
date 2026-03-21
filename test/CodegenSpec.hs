@@ -10,8 +10,8 @@ import           Codegen.GenIR       (GenIRError (..))
 import qualified Data.List.NonEmpty  as NE
 import           FrontendIR          (Axis (..), Expr (..), IxExpr (..),
                                       Program (..), Stmt (..), TensorDecl (..))
-import           Polyhedral.Internal (AstTree)
-import           Shoto               (compile)
+import           Polyhedral.Internal (AstExpression (..), AstOp (..),
+                                      AstTree (..))
 import           Test.Hspec
 
 spec :: Spec
@@ -28,7 +28,7 @@ spec = do
                         , "}"
                         ]
 
-            ast <- compileAst program
+            let ast = simpleCopyAst
             generateC ast program `shouldBe` Right expected
 
         it "generates CUDA code with loop mapped to x" $ do
@@ -43,7 +43,7 @@ spec = do
                         , "}"
                         ]
 
-            ast <- compileAst program
+            let ast = simpleCopyAst
             generateCuda CudaX ast program `shouldBe` Right expected
 
         it "generates CUDA code with loop mapped to y" $ do
@@ -58,7 +58,7 @@ spec = do
                         , "}"
                         ]
 
-            ast <- compileAst program
+            let ast = simpleCopyAst
             generateCuda CudaY ast program `shouldBe` Right expected
 
         it "constructs generated name wrappers from string literals" $ do
@@ -91,20 +91,20 @@ spec = do
                                 ]
                         }
 
-            ast <- compileAst invalidProgram
+            let ast = simpleCopyAst
             generateC ast invalidProgram
                 `shouldBe` Left
                     (CodegenGenIRError (ErrGenExpectedSingleAxis 2))
 
-compileAst :: Program -> IO AstTree
-compileAst program = do
-    result <- compile [] program
-    case result of
-        Left err -> do
-            expectationFailure $
-                "expected compilation to AstTree to succeed, but got: " <> show err
-            fail "compileAst failed"
-        Right ast -> pure ast
+simpleCopyAst :: AstTree
+simpleCopyAst =
+    AstFor
+        { forIterator = "c0"
+        , forInit = ExprInt 0
+        , forCond = ExprOp (OpLt (ExprId "c0") (ExprId "N"))
+        , forInc = ExprInt 1
+        , forBody = AstUser $ ExprOp $ OpCall (ExprId "S0") [ExprId "c0"]
+        }
 
 simpleCopyProgram :: Program
 simpleCopyProgram =

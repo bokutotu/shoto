@@ -2,22 +2,21 @@
 
 module ShotoSpec (spec) where
 
-import qualified Data.List.NonEmpty  as NE
-import           FrontendIR          (Axis (..), Expr (..), FrontendError (..),
-                                      IxExpr (..), Program (..), Stmt (..),
-                                      TensorDecl (..))
-import           Polyhedral          (ScheduleOptimization (..))
-import           Polyhedral.Error    (IslError (..), OptimizeError (..),
-                                      PolyhedralError (..))
-import           Polyhedral.Internal (AstExpression (..), AstOp (..),
-                                      AstTree (..))
-import           Shoto               (CompileError (..), compile)
+import qualified Data.List.NonEmpty as NE
+import           FrontendIR         (Axis (..), Expr (..), FrontendError (..),
+                                     IxExpr (..), Program (..), Stmt (..),
+                                     TensorDecl (..))
+import           Polyhedral         (ScheduleOptimization (..))
+import           Polyhedral.Error   (IslError (..), OptimizeError (..),
+                                     PolyhedralError (..))
+import           Shoto              (CompileError (..), CudaDim (..),
+                                     DeviceConfig (..), compile)
 import           Test.Hspec
 
 spec :: Spec
 spec = do
     describe "Shoto compile" $ do
-        it "compiles a simple 1D program to AST" $ do
+        it "compiles a simple 1D program to C code" $ do
             let front =
                     Program
                         { axes =
@@ -38,17 +37,51 @@ spec = do
                                 ]
                         }
 
-                expectedAst =
-                    AstFor
-                        { forIterator = "c0"
-                        , forInit = ExprInt 0
-                        , forCond = ExprOp (OpLt (ExprId "c0") (ExprId "N"))
-                        , forInc = ExprInt 1
-                        , forBody = AstUser $ ExprOp $ OpCall (ExprId "S0") [ExprId "c0"]
+                expected =
+                    unlines
+                        [ "void shoto_kernel(int N, float* A, float* B) {"
+                        , "    for (int c0 = 0; c0 < N; c0 += 1) {"
+                        , "        A[c0] = B[c0];"
+                        , "    }"
+                        , "}"
+                        ]
+
+            result <- compile [] front CPU
+            result `shouldBe` Right expected
+
+        it "compiles a simple 1D program to CUDA code" $ do
+            let front =
+                    Program
+                        { axes =
+                            NE.fromList
+                                [Axis{iter = "i", extent = "N"}]
+                        , tensors =
+                            NE.fromList
+                                [ TensorDecl{tensor = "A", shape = ["N"]}
+                                , TensorDecl{tensor = "B", shape = ["N"]}
+                                ]
+                        , stmts =
+                            NE.fromList
+                                [ Assign
+                                    { outputTensor = "A"
+                                    , outputIndex = [IxVar "i"]
+                                    , rhs = ELoad "B" [IxVar "i"]
+                                    }
+                                ]
                         }
 
-            result <- compile [] front
-            result `shouldBe` Right expectedAst
+                expected =
+                    unlines
+                        [ "extern \"C\" __global__ void shoto_kernel_cuda(int N, float* A, float* B) {"
+                        , "    int c0 = blockIdx.x * blockDim.x + threadIdx.x;"
+                        , "    if (c0 < N) {"
+                        , "        A[c0] = B[c0];"
+                        , "    }"
+                        , "}"
+                        ]
+
+            result <- compile [] front (GPU CudaX)
+            result `shouldBe` Right expected
 
         it "returns Frontend errors as CompileFrontendError" $ do
             let invalid =
@@ -71,7 +104,7 @@ spec = do
                                 ]
                         }
 
-            result <- compile [] invalid
+            result <- compile [] invalid CPU
             result `shouldBe` Left (CompileFrontendError (ErrStoreIndexMismatch ["i"] ["j"]))
 
         it "returns Polyhedral errors as CompilePolyhedralError" $ do
@@ -95,7 +128,7 @@ spec = do
                                 ]
                         }
 
-            result <- compile [Tile []] front
+            result <- compile [Tile []] front CPU
 
             result
                 `shouldBe` Left
@@ -122,7 +155,7 @@ spec = do
                                 ]
                         }
 
-            result <- compile [LoopInterchange [1, 1]] front
+            result <- compile [LoopInterchange [1, 1]] front CPU
 
             let payloadIsPresent =
                     case result of
