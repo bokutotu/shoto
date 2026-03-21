@@ -1,13 +1,14 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Runtime.CPUSpec (spec) where
 
-import           Control.Exception (finally)
-import           Runtime.CPU       (CompiledSharedObject, appendDispatchWrapper,
+import           Builder.CPU       (CompiledSharedObject, appendDispatchWrapper,
                                     cleanupCompiledSharedObject,
-                                    compileCProgram, runCPUKernel,
-                                    withLoadedCPUKernel)
+                                    compileCProgram)
+import           Builder.Types     (BuilderError (..))
+import           Control.Exception (finally)
+import           Control.Monad     (join)
+import           Runtime.CPU       (runCPUKernel, withLoadedCPUKernel)
 import           Runtime.Types     (KernelArg (..), KernelSignature (..),
                                     RuntimeError (..), emptyTensorBuffer,
                                     readTensorBuffer, tensorBufferFromList)
@@ -138,23 +139,19 @@ withCompiledSharedObject ::
     (CompiledSharedObject -> IO a) ->
     IO a
 withCompiledSharedObject kernelSignature source action = do
-    compileCProgram kernelSignature source >>= \case
-        Left err -> do
-            expectationFailure $ "expected JIT compilation to succeed, but got: " <> show err
-            fail "compileCProgram failed"
-        Right compiledSharedObject ->
-            action compiledSharedObject
-                `finally` cleanupCompiledSharedObject compiledSharedObject
+    Right compiledSharedObject <- compileCProgram kernelSignature source
+    action compiledSharedObject
+        `finally` cleanupCompiledSharedObject compiledSharedObject
 
 runCompiledKernel :: CompiledSharedObject -> [KernelArg] -> IO (Either RuntimeError ())
 runCompiledKernel compiledSharedObject kernelArgs = do
     actual <- withLoadedCPUKernel compiledSharedObject $ \loadedKernel ->
         runCPUKernel loadedKernel kernelArgs
-    pure $ either Left id actual
+    pure $ join actual
 
-isGccFailure :: Either RuntimeError CompiledSharedObject -> Bool
+isGccFailure :: Either BuilderError CompiledSharedObject -> Bool
 isGccFailure = \case
-    Left ErrRuntimeGccFailed{} -> True
+    Left ErrBuilderGccFailed{} -> True
     _ -> False
 
 copyKernelSignature :: KernelSignature

@@ -2,11 +2,9 @@
 
 module Runtime.NVIDIA (
     NVIDIA,
-    CompiledCudaProgram,
     LoadedNvidiaKernel,
     DeviceBuffer,
     runNVIDIA,
-    compileCudaProgram,
     loadNvidiaKernel,
     allocateDeviceBuffer,
     freeDeviceBuffer,
@@ -16,34 +14,22 @@ module Runtime.NVIDIA (
     runNvidiaKernelWithHostBuffers,
 ) where
 
+import           Builder.NVIDIA.Types           (CompiledCudaProgram (..))
 import           Codegen.CUDA.Ast               (CudaDim (..))
 import           Control.Monad                  (unless, zipWithM_)
 import           Control.Monad.Except           (MonadError (catchError, throwError))
 import           Data.Foldable                  (traverse_)
 import           Foreign.C.Types                (CFloat, CInt)
 import           Foreign.Storable               (sizeOf)
-import qualified Runtime.NVIDIA.Internal.Device as CUDA
 import qualified Runtime.NVIDIA.Internal.Memory as CUDA
 import qualified Runtime.NVIDIA.Internal.Module as CUDA
-import qualified Runtime.NVIDIA.Internal.NVRTC  as CUDA
-import           Runtime.NVIDIA.Types           (CompiledCudaProgram (..),
-                                                 DeviceBuffer (..),
+import           Runtime.NVIDIA.Types           (DeviceBuffer (..),
                                                  LoadedNvidiaKernel (..),
                                                  NVIDIA, runNVIDIA)
 import           Runtime.Types                  (KernelArg (..),
                                                  KernelSignature (..),
                                                  RuntimeError (..),
                                                  TensorBuffer (..))
-
-compileCudaProgram :: KernelSignature -> CudaDim -> String -> NVIDIA s CompiledCudaProgram
-compileCudaProgram kernelSignature compiledCudaDim source = do
-    (major, minor) <- CUDA.computeCapability
-    let compiledPtxOptions =
-            [ "--gpu-architecture=compute_" <> show major <> show minor
-            , "--std=c++11"
-            ]
-    compiledPtx <- CUDA.compileProgramToPtx "shoto-runtime.cu" source compiledPtxOptions
-    pure CompiledCudaProgram{compiledPtx, compiledKernelSignature = kernelSignature, compiledCudaDim}
 
 loadNvidiaKernel :: CompiledCudaProgram -> NVIDIA s (LoadedNvidiaKernel s)
 loadNvidiaKernel compiledCudaProgram = do

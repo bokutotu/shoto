@@ -9,9 +9,7 @@ module Runtime.NVIDIA.Internal.Core (
     throwNVIDIA,
     askEnv,
     expectDriverSuccess,
-    expectNvrtcSuccess,
     driverErrorFromResult,
-    nvrtcErrorFromResult,
 ) where
 
 import           Control.Monad                      (when)
@@ -25,7 +23,6 @@ import           Foreign.Marshal.Alloc              (alloca)
 import           Foreign.Ptr                        (nullPtr)
 import           Foreign.Storable                   (peek)
 import           Runtime.NVIDIA.Internal.Driver.FFI
-import           Runtime.NVIDIA.Internal.NVRTC.FFI
 import           Runtime.Types                      (RuntimeError (..))
 
 data Env = Env
@@ -88,11 +85,6 @@ expectDriverSuccess fnName result =
     when (result /= cuSuccess) $
         liftIO (driverErrorFromResult fnName result) >>= throwNVIDIA
 
-expectNvrtcSuccess :: String -> NvrtcResult -> Maybe String -> NVIDIA s ()
-expectNvrtcSuccess fnName result compileLog =
-    when (result /= nvrtcSuccess) $
-        liftIO (nvrtcErrorFromResult fnName result compileLog) >>= throwNVIDIA
-
 driverErrorFromResult :: String -> CuResult -> IO RuntimeError
 driverErrorFromResult fnName result = do
     cudaName <- lookupDriverErrorString c_cuGetErrorName result
@@ -103,20 +95,6 @@ driverErrorFromResult fnName result = do
             (fromIntegral result)
             cudaName
             cudaMessage
-
-nvrtcErrorFromResult :: String -> NvrtcResult -> Maybe String -> IO RuntimeError
-nvrtcErrorFromResult fnName result compileLog = do
-    messagePtr <- c_nvrtcGetErrorString result
-    cudaMessage <-
-        if messagePtr == nullPtr
-            then pure Nothing
-            else Just <$> peekCString messagePtr
-    pure $
-        ErrRuntimeCudaNvrtcError
-            fnName
-            (fromIntegral result)
-            cudaMessage
-            compileLog
 
 lookupDriverErrorString ::
     (CuResult -> CStringResultPtr -> IO CuResult) ->

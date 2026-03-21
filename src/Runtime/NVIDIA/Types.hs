@@ -2,32 +2,16 @@
 
 module Runtime.NVIDIA.Types (
     NVIDIA (..),
-    CompiledCudaProgram (..),
     LoadedNvidiaKernel (..),
     DeviceBuffer (..),
     runNVIDIA,
 ) where
 
 import           Codegen.CUDA.Ast               (CudaDim)
-import qualified Data.ByteString                as BS
 import           Runtime.NVIDIA.Internal        (NVIDIA (..), runNVIDIA)
 import           Runtime.NVIDIA.Internal.Memory (DevicePtr)
 import           Runtime.NVIDIA.Internal.Module (Function, Module)
 import           Runtime.Types                  (KernelSignature)
-
-data CompiledCudaProgram = CompiledCudaProgram
-    { compiledPtx :: BS.ByteString
-    , compiledKernelSignature :: KernelSignature
-    , compiledCudaDim :: CudaDim
-    }
-
-instance Show CompiledCudaProgram where
-    show compiledCudaProgram =
-        "CompiledCudaProgram { compiledKernelSignature = "
-            <> show compiledCudaProgram.compiledKernelSignature
-            <> ", compiledCudaDim = "
-            <> show compiledCudaProgram.compiledCudaDim
-            <> " }"
 
 data LoadedNvidiaKernel s = LoadedNvidiaKernel
     { loadedKernelSignature :: KernelSignature

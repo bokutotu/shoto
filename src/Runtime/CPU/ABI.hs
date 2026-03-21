@@ -34,7 +34,7 @@ appendDispatchWrapper source kernelSignature =
         zipWith renderTensorBinding [1 :: Int ..] kernelSignature.tensorParamNames
 
     tensorArgNames =
-        (\tensorName -> tensorName <> "_arg") <$> kernelSignature.tensorParamNames
+        (<> "_arg") <$> kernelSignature.tensorParamNames
 
     renderTensorBinding argIndex tensorName =
         "    float* "

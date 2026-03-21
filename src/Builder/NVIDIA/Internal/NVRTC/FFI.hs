@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module Runtime.NVIDIA.Internal.NVRTC.FFI (
+module Builder.NVIDIA.Internal.NVRTC.FFI (
     NvrtcResult,
     RawProgram,
     nvrtcSuccess,

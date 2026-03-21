@@ -2,12 +2,14 @@
 
 module Runtime.NVIDIA.Internal.CUDASpec (spec) where
 
-import           Control.Monad.IO.Class  (liftIO)
-import qualified Data.ByteString         as BS
-import           Foreign.C.Types         (CFloat)
-import           Foreign.Marshal.Alloc   (free)
-import           Foreign.Marshal.Array   (mallocArray, newArray, peekArray)
-import           Foreign.Storable        (sizeOf)
+import           Builder.NVIDIA.Internal.NVPTX (compileProgramToPtx)
+import           Control.Monad.IO.Class        (liftIO)
+import qualified Data.ByteString               as BS
+import           Foreign.C.Types               (CFloat)
+import           Foreign.Marshal.Alloc         (free)
+import           Foreign.Marshal.Array         (mallocArray, newArray,
+                                                peekArray)
+import           Foreign.Storable              (sizeOf)
 import           Runtime.NVIDIA.Internal
 import           Test.Hspec
 
@@ -21,21 +23,15 @@ spec = do
                 Left _ -> False
 
         it "compiles a CUDA kernel to PTX with NVRTC" $ do
-            result <- runNVIDIA $ do
-                (major, minor) <- computeCapability
+            Right (major, minor) <- runNVIDIA computeCapability
+            Right ptx <-
                 compileProgramToPtx
                     "shoto_test.cu"
                     copyKernel
                     [ "--gpu-architecture=compute_" <> show major <> show minor
                     , "--std=c++11"
                     ]
-
-            case result of
-                Left err ->
-                    expectationFailure $
-                        "expected NVRTC compilation to succeed, but got: " <> show err
-                Right ptx ->
-                    BS.null ptx `shouldBe` False
+            BS.null ptx `shouldBe` False
 
         it "copies a host buffer to device and back" $ do
             let inputValues = [1, 2, 3, 4 :: CFloat]

@@ -15,6 +15,7 @@
 ## Haskell Style
 
 - Prefer record-dot syntax (`x.field`) in new or edited code.
+- In tests, prefer direct pattern matches for setup that is expected to succeed; avoid custom `expectationFailure` plumbing for unexpected setup failures.
 
 ## Documentation
 

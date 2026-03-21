@@ -1,5 +1,6 @@
 module Polyhedral.Internal.ScheduleNodeSpec (spec) where
 
+import           Control.Monad       ((>=>))
 import           Polyhedral.Internal
 import           Test.Hspec
 
@@ -84,5 +85,5 @@ countBandNodes sched = scheduleGetRoot sched >>= go
                     ScheduleNodeBand -> 1
                     _ -> 0
         n <- scheduleNodeNChildren node
-        children <- mapM (\i -> scheduleNodeChild node i >>= go) [0 .. n - 1]
+        children <- mapM (scheduleNodeChild node >=> go) [0 .. n - 1]
         pure $ here + sum children

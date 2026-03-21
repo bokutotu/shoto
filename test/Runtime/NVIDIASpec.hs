@@ -2,10 +2,12 @@
 
 module Runtime.NVIDIASpec (spec) where
 
+import qualified Builder.NVIDIA as BuilderNVIDIA
+import           Builder.Types  (BuilderError (..))
 import           Codegen        (CudaDim (..))
-import           Runtime.NVIDIA (allocateDeviceBuffer, compileCudaProgram,
-                                 downloadTensorBuffer, freeDeviceBuffer,
-                                 loadNvidiaKernel, runNVIDIA, runNvidiaKernel,
+import           Runtime.NVIDIA (allocateDeviceBuffer, downloadTensorBuffer,
+                                 freeDeviceBuffer, loadNvidiaKernel, runNVIDIA,
+                                 runNvidiaKernel,
                                  runNvidiaKernelWithHostBuffers,
                                  uploadTensorBuffer)
 import           Runtime.Types  (KernelArg (..), KernelSignature (..),
@@ -19,9 +21,9 @@ spec = do
         it "compiles and runs a copy kernel with host-buffer staging" $ do
             output <- emptyTensorBuffer 4
             input <- tensorBufferFromList [1, 2, 3, 4]
+            compiledKernel <- expectCompiledCudaProgram copyKernelSignature CudaX copyKernel
 
             actual <- runNVIDIA $ do
-                compiledKernel <- compileCudaProgram copyKernelSignature CudaX copyKernel
                 loadedKernel <- loadNvidiaKernel compiledKernel
                 runNvidiaKernelWithHostBuffers
                     loadedKernel
@@ -38,9 +40,9 @@ spec = do
             output <- emptyTensorBuffer 4
             lhs <- tensorBufferFromList [1, 2, 3, 4]
             rhs <- tensorBufferFromList [5, 6, 7, 8]
+            compiledKernel <- expectCompiledCudaProgram addKernelSignature CudaX addKernel
 
             actual <- runNVIDIA $ do
-                compiledKernel <- compileCudaProgram addKernelSignature CudaX addKernel
                 loadedKernel <- loadNvidiaKernel compiledKernel
                 outputBuffer <- allocateDeviceBuffer 4
                 lhsBuffer <- allocateDeviceBuffer 4
@@ -57,15 +59,15 @@ spec = do
             readTensorBuffer output `shouldReturn` [6, 8, 10, 12]
 
         it "reports NVRTC compilation failures" $ do
-            runNVIDIA (compileCudaProgram copyKernelSignature CudaX malformedKernel)
+            BuilderNVIDIA.compileCudaProgram copyKernelSignature CudaX malformedKernel
                 >>= (`shouldSatisfy` isNvrtcFailure)
 
         it "rejects invalid thread block sizes before launch" $ do
             output <- emptyTensorBuffer 4
             input <- tensorBufferFromList [1, 2, 3, 4]
+            compiledKernel <- expectCompiledCudaProgram copyKernelSignature CudaX copyKernel
 
             actual <- runNVIDIA $ do
-                compiledKernel <- compileCudaProgram copyKernelSignature CudaX copyKernel
                 loadedKernel <- loadNvidiaKernel compiledKernel
                 runNvidiaKernelWithHostBuffers
                     loadedKernel
@@ -80,9 +82,9 @@ spec = do
         it "rejects tensor buffers smaller than the requested extent" $ do
             output <- emptyTensorBuffer 2
             input <- tensorBufferFromList [1, 2]
+            compiledKernel <- expectCompiledCudaProgram copyKernelSignature CudaX copyKernel
 
             actual <- runNVIDIA $ do
-                compiledKernel <- compileCudaProgram copyKernelSignature CudaX copyKernel
                 loadedKernel <- loadNvidiaKernel compiledKernel
                 runNvidiaKernelWithHostBuffers
                     loadedKernel
@@ -94,9 +96,18 @@ spec = do
 
             actual `shouldBe` Left (ErrRuntimeTensorTooSmall 1 4 2)
 
-isNvrtcFailure :: Either RuntimeError a -> Bool
+expectCompiledCudaProgram ::
+    KernelSignature ->
+    CudaDim ->
+    String ->
+    IO BuilderNVIDIA.CompiledCudaProgram
+expectCompiledCudaProgram kernelSignature cudaDim source = do
+    Right compiledProgram <- BuilderNVIDIA.compileCudaProgram kernelSignature cudaDim source
+    pure compiledProgram
+
+isNvrtcFailure :: Either BuilderError a -> Bool
 isNvrtcFailure = \case
-    Left ErrRuntimeCudaNvrtcError{} -> True
+    Left ErrBuilderCudaNvrtcError{} -> True
     _ -> False
 
 copyKernelSignature :: KernelSignature

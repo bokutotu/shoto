@@ -17,7 +17,6 @@ import           Foreign.ForeignPtr    (ForeignPtr, mallocForeignPtrArray,
                                         withForeignPtr)
 import           Foreign.Marshal.Array (peekArray, pokeArray)
 import           Foreign.Ptr           (Ptr)
-import           System.Exit           (ExitCode)
 
 data KernelSignature = KernelSignature
     { extentParamName :: String
@@ -40,8 +39,7 @@ data KernelArg
     deriving (Show)
 
 data RuntimeError
-    = ErrRuntimeGccFailed FilePath ExitCode String String
-    | ErrRuntimeLoadFailed FilePath String
+    = ErrRuntimeLoadFailed FilePath String
     | ErrRuntimeSymbolFailed FilePath String String
     | ErrRuntimeArgCountMismatch Int Int
     | ErrRuntimeExpectedExtentArg
@@ -55,7 +53,6 @@ data RuntimeError
     | ErrRuntimeDeviceBufferTooSmall Int Int
     | ErrRuntimeHostBufferTooSmall Int Int
     | ErrRuntimeCudaDriverError String Int (Maybe String) (Maybe String)
-    | ErrRuntimeCudaNvrtcError String Int (Maybe String) (Maybe String)
     | ErrRuntimeCudaUsageError String
     deriving (Eq, Show)
 

@@ -1,23 +1,20 @@
-module Runtime.NVIDIA.Internal.NVRTC (
+module Builder.NVIDIA.Internal.NVPTX (
     compileProgramToPtx,
 ) where
 
+import           Builder.NVIDIA.Internal.NVRTC.FFI
+import           Builder.Types                     (BuilderError (..))
 import           Control.Exception                 (SomeException, bracket, try)
-import           Control.Monad.IO.Class            (liftIO)
 import qualified Data.ByteString                   as BS
 import           Data.List                         (isPrefixOf, nub)
-import           Foreign.C.String                  (CString, withCString)
+import           Foreign.C.String                  (CString, peekCString,
+                                                    withCString)
 import           Foreign.C.Types                   (CInt (..))
 import           Foreign.Marshal.Alloc             (alloca, allocaBytes)
 import           Foreign.Marshal.Array             (withArrayLen)
 import           Foreign.Marshal.Utils             (with)
 import           Foreign.Ptr                       (Ptr, nullPtr)
 import           Foreign.Storable                  (peek)
-import           Runtime.NVIDIA.Internal.Core      (NVIDIA,
-                                                    nvrtcErrorFromResult,
-                                                    throwNVIDIA)
-import           Runtime.NVIDIA.Internal.NVRTC.FFI
-import           Runtime.Types                     (RuntimeError)
 import           System.Directory                  (doesDirectoryExist,
                                                     listDirectory)
 import           System.Environment                (lookupEnv, setEnv)
@@ -26,12 +23,24 @@ import           System.Posix.DynamicLinker        (DL,
                                                     RTLDFlags (RTLD_GLOBAL, RTLD_NOW),
                                                     dlopen)
 
-compileProgramToPtx :: String -> String -> [String] -> NVIDIA s BS.ByteString
-compileProgramToPtx programName source compileOptions = do
-    result <- liftIO $ compileProgramToPtxIO programName source compileOptions
-    either throwNVIDIA pure result
+compileProgramToPtx :: String -> String -> [String] -> IO (Either BuilderError BS.ByteString)
+compileProgramToPtx = compileProgramToPtxIO
 
-compileProgramToPtxIO :: String -> String -> [String] -> IO (Either RuntimeError BS.ByteString)
+nvrtcErrorFromResult :: String -> NvrtcResult -> Maybe String -> IO BuilderError
+nvrtcErrorFromResult fnName result compileLog = do
+    messagePtr <- c_nvrtcGetErrorString result
+    cudaMessage <-
+        if messagePtr == nullPtr
+            then pure Nothing
+            else Just <$> peekCString messagePtr
+    pure $
+        ErrBuilderCudaNvrtcError
+            fnName
+            (fromIntegral result)
+            cudaMessage
+            compileLog
+
+compileProgramToPtxIO :: String -> String -> [String] -> IO (Either BuilderError BS.ByteString)
 compileProgramToPtxIO programName source compileOptions =
     do
         ensureNvrtcBuiltinsLoaded
@@ -41,17 +50,21 @@ compileProgramToPtxIO programName source compileOptions =
                 then do
                     compileLog <- readProgramLog rawProgram
                     Left <$> nvrtcErrorFromResult "nvrtcCompileProgram" compileResult compileLog
-                else Right <$> readPtx rawProgram
+                else readPtx rawProgram
 
 withCreatedProgram ::
     String ->
     String ->
-    (RawProgram -> IO a) ->
-    IO a
-withCreatedProgram programName source =
-    bracket (createProgram programName source) destroyProgram
+    (RawProgram -> IO (Either BuilderError a)) ->
+    IO (Either BuilderError a)
+withCreatedProgram programName source continue = do
+    createResult <- createProgram programName source
+    case createResult of
+        Left err -> pure $ Left err
+        Right rawProgram ->
+            bracket (pure rawProgram) destroyProgram continue
 
-createProgram :: String -> String -> IO RawProgram
+createProgram :: String -> String -> IO (Either BuilderError RawProgram)
 createProgram programName source =
     withCString source $ \sourcePtr ->
         withCString programName $ \namePtr ->
@@ -60,8 +73,8 @@ createProgram programName source =
                 if result /= nvrtcSuccess
                     then do
                         compileError <- nvrtcErrorFromResult "nvrtcCreateProgram" result Nothing
-                        ioError $ userError (show compileError)
-                    else peek programPtr
+                        pure $ Left compileError
+                    else Right <$> peek programPtr
 
 destroyProgram :: RawProgram -> IO ()
 destroyProgram rawProgram =
@@ -86,7 +99,7 @@ readProgramLog rawProgram = do
                 BS.packCStringLen (logPtr, fromIntegral logSize - 1)
             pure $ Just $ bytesToString logBytes
 
-readPtx :: RawProgram -> IO BS.ByteString
+readPtx :: RawProgram -> IO (Either BuilderError BS.ByteString)
 readPtx rawProgram = do
     (sizeResult, ptxSize) <-
         alloca $ \sizePtr -> do
@@ -96,14 +109,14 @@ readPtx rawProgram = do
     if sizeResult /= nvrtcSuccess
         then do
             compileError <- nvrtcErrorFromResult "nvrtcGetPTXSize" sizeResult Nothing
-            ioError $ userError (show compileError)
+            pure $ Left compileError
         else allocaBytes (fromIntegral ptxSize) $ \ptxPtr -> do
             ptxResult <- c_nvrtcGetPTX rawProgram ptxPtr
             if ptxResult /= nvrtcSuccess
                 then do
                     compileError <- nvrtcErrorFromResult "nvrtcGetPTX" ptxResult Nothing
-                    ioError $ userError (show compileError)
-                else BS.packCStringLen (ptxPtr, fromIntegral ptxSize - 1)
+                    pure $ Left compileError
+                else Right <$> BS.packCStringLen (ptxPtr, fromIntegral ptxSize - 1)
 
 withCStringArray :: [String] -> ((CInt, Ptr CString) -> IO a) -> IO a
 withCStringArray values continue =

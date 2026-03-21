@@ -6,12 +6,13 @@ module Runtime.CPU.Execute (
     runCPUKernel,
 ) where
 
+import           Builder.CPU.Types          (CompiledSharedObject (..))
 import           Control.Exception          (IOException, bracket, catch)
+import           Control.Monad              (when)
 import           Foreign.C.Types            (CInt (..))
 import           Foreign.Marshal.Array      (withArray)
 import           Foreign.Marshal.Utils      (with)
 import           Foreign.Ptr                (FunPtr, Ptr, castPtr)
-import           Runtime.CPU.JIT            (CompiledSharedObject (..))
 import           Runtime.Types              (KernelArg (..),
                                              KernelSignature (..),
                                              RuntimeError (..),
@@ -90,22 +91,22 @@ validateKernelArgs :: KernelSignature -> [KernelArg] -> Either RuntimeError ()
 validateKernelArgs kernelSignature kernelArgs = do
     let expectedArgCount = 1 + length kernelSignature.tensorParamNames
         actualArgCount = length kernelArgs
-    if actualArgCount /= expectedArgCount
-        then Left $ ErrRuntimeArgCountMismatch expectedArgCount actualArgCount
-        else pure ()
+    when (actualArgCount /= expectedArgCount) $
+        Left $
+            ErrRuntimeArgCountMismatch expectedArgCount actualArgCount
 
     extentValue <-
         case kernelArgs of
             KernelArgInt extentValue : _ -> Right extentValue
             _ -> Left ErrRuntimeExpectedExtentArg
 
-    if extentValue < 0
-        then Left $ ErrRuntimeNegativeExtent extentValue
-        else pure ()
+    when (extentValue < 0) $
+        Left $
+            ErrRuntimeNegativeExtent extentValue
 
-    if extentValue > fromIntegral (maxBound :: CInt)
-        then Left $ ErrRuntimeExtentOutOfRange extentValue
-        else pure ()
+    when (extentValue > fromIntegral (maxBound :: CInt)) $
+        Left $
+            ErrRuntimeExtentOutOfRange extentValue
 
     let tensorArgs = drop 1 kernelArgs
     zipWithM_ (validateTensorArg extentValue) [1 ..] tensorArgs

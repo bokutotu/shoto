@@ -1,28 +1,26 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
-module Runtime.CPU.JIT (
+module Builder.CPU (
     CompiledSharedObject (..),
     compileCProgram,
+    appendDispatchWrapper,
     cleanupCompiledSharedObject,
 ) where
 
-import           Runtime.CPU.ABI  (appendDispatchWrapper)
-import           Runtime.Types    (KernelSignature, RuntimeError (..))
-import           System.Directory (doesFileExist, getTemporaryDirectory,
-                                   removeFile)
-import           System.Exit      (ExitCode (..))
-import           System.FilePath  (replaceExtension)
-import           System.IO        (hClose, openTempFile)
-import           System.Process   (proc, readCreateProcessWithExitCode)
+import           Builder.CPU.Types (CompiledSharedObject (..))
+import           Builder.Types     (BuilderError (..))
+import           Control.Monad     (when)
+import           Data.Foldable     (traverse_)
+import           Runtime.CPU.ABI   (appendDispatchWrapper)
+import           Runtime.Types     (KernelSignature)
+import           System.Directory  (doesFileExist, getTemporaryDirectory,
+                                    removeFile)
+import           System.Exit       (ExitCode (..))
+import           System.FilePath   (replaceExtension)
+import           System.IO         (hClose, openTempFile)
+import           System.Process    (proc, readCreateProcessWithExitCode)
 
-data CompiledSharedObject = CompiledSharedObject
-    { cSourcePath :: FilePath
-    , sharedObjectPath :: FilePath
-    , kernelSignature :: KernelSignature
-    }
-    deriving (Eq, Show)
-
-compileCProgram :: KernelSignature -> String -> IO (Either RuntimeError CompiledSharedObject)
+compileCProgram :: KernelSignature -> String -> IO (Either BuilderError CompiledSharedObject)
 compileCProgram kernelSignature source = do
     tempDir <- getTemporaryDirectory
     (cSourcePath, sourceHandle) <- openTempFile tempDir "shoto-runtime.c"
@@ -47,19 +45,21 @@ compileCProgram kernelSignature source = do
         ExitFailure _ -> do
             cleanupPathIfExists cSourcePath
             cleanupPathIfExists sharedObjectPath
-            pure $ Left $ ErrRuntimeGccFailed cSourcePath exitCode stdoutText stderrText
+            pure $ Left $ ErrBuilderGccFailed cSourcePath exitCode stdoutText stderrText
 
 cleanupCompiledSharedObject :: CompiledSharedObject -> IO ()
 cleanupCompiledSharedObject compiledSharedObject = do
-    cleanupPathIfExists compiledSharedObject.cSourcePath
-    cleanupPathIfExists compiledSharedObject.sharedObjectPath
+    traverse_
+        cleanupPathIfExists
+        [ compiledSharedObject.cSourcePath
+        , compiledSharedObject.sharedObjectPath
+        ]
 
 cleanupPathIfExists :: FilePath -> IO ()
 cleanupPathIfExists path = do
     pathExists <- doesFileExist path
-    if pathExists
-        then removeFile path
-        else pure ()
+    when pathExists $
+        removeFile path
 
 optimizedSharedObjectArgs :: FilePath -> FilePath -> [String]
 optimizedSharedObjectArgs cSourcePath sharedObjectPath =
