@@ -5,7 +5,7 @@ module Runtime.CPU.ABI (
 ) where
 
 import           Data.List     (dropWhileEnd, intercalate)
-import           Runtime.Types (KernelSignature (..))
+import           Runtime.Types (KernelSignature (..), KernelTensorParam (..))
 
 appendDispatchWrapper :: String -> KernelSignature -> String
 appendDispatchWrapper source kernelSignature =
@@ -15,30 +15,40 @@ appendDispatchWrapper source kernelSignature =
             ( [ "void shoto_dispatch(int argc, void** args) {"
               , "    (void)argc;"
               ]
-                <> extentBinding
+                <> extentBindings
                 <> tensorBindings
                 <> [ "    shoto_kernel("
-                        <> intercalate ", " (("*" <> kernelSignature.extentParamName <> "_arg") : tensorArgNames)
+                        <> intercalate ", " (extentArgNames <> tensorArgNames)
                         <> ");"
                    , "}"
                    ]
             )
   where
-    extentBinding =
-        [ "    int* "
-            <> kernelSignature.extentParamName
-            <> "_arg = (int*)args[0];"
-        ]
+    extentBindings =
+        zipWith renderExtentBinding [0 :: Int ..] kernelSignature.extentParamNames
 
     tensorBindings =
-        zipWith renderTensorBinding [1 :: Int ..] kernelSignature.tensorParamNames
+        zipWith
+            renderTensorBinding
+            [length kernelSignature.extentParamNames ..]
+            kernelSignature.tensorParams
 
     tensorArgNames =
-        (<> "_arg") <$> kernelSignature.tensorParamNames
+        (<> "_arg") . tensorParamName <$> kernelSignature.tensorParams
 
-    renderTensorBinding argIndex tensorName =
+    extentArgNames =
+        (\extentParamName -> "*" <> extentParamName <> "_arg") <$> kernelSignature.extentParamNames
+
+    renderExtentBinding argIndex extentParamName =
+        "    int* "
+            <> extentParamName
+            <> "_arg = (int*)args["
+            <> show argIndex
+            <> "];"
+
+    renderTensorBinding argIndex tensorParam =
         "    float* "
-            <> tensorName
+            <> tensorParam.tensorParamName
             <> "_arg = (float*)args["
             <> show argIndex
             <> "];"

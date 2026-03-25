@@ -1,143 +1,129 @@
-{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot   #-}
 
 module Codegen.GenIR (
     GenIRError (..),
     AstIterVar (..),
-    FrontendIterName (..),
     ExtentParamName (..),
-    AstStmtName (..),
-    GenLoop (..),
-    GenStmtBinding (..),
+    GenTensorDecl (..),
+    GenTensorRef (..),
+    GenExpr (..),
+    GenStmt (..),
     GenProgram (..),
     buildGenProgram,
 ) where
 
 import qualified Data.List.NonEmpty  as NE
+import qualified Data.Map.Strict     as Map
 import           Data.String         (IsString (fromString))
-import           FrontendIR.Types    (Axis (..), IxExpr (..), Program (..),
-                                      Stmt (..), iterNameToString,
+import           FrontendIR.Types    (Axis (..), Expr (..), IterName,
+                                      IxExpr (..), Program (..), ReductionOp,
+                                      Stmt (..), TensorDecl (..), TensorName,
                                       paramNameToString)
 import           Polyhedral.Internal (AstExpression (..), AstOp (..),
                                       AstTree (..))
 
 data GenIRError
-    = ErrGenExpectedSingleStatement Int
-    | ErrGenExpectedSingleAxis Int
-    | ErrGenOnlyAssignSupported
-    | ErrGenExpectedSingleOutputIndex Int
-    | ErrGenExpectedTopLevelFor
+    = ErrGenExpectedTopLevelFor
     | ErrGenExpectedCanonicalFor
+    | ErrGenMalformedLoopNest
     | ErrGenExpectedLoopUpperBound
-    | ErrGenExpectedSingleStmtCall
-    | ErrGenExpectedStmtCallExpression
-    | ErrGenExpectedSingleCallArgument Int
+    | ErrGenUnsupportedStmtCall
     | ErrGenExpectedCallArgumentIdentifier
-    | ErrGenLoopAndCallIndexMismatch AstIterVar AstIterVar
-    | ErrGenAxisAndStmtIterMismatch FrontendIterName FrontendIterName
-    | ErrGenLoopAndAxisBoundMismatch ExtentParamName ExtentParamName
-    | ErrGenStmtNameMismatch AstStmtName AstStmtName
+    | ErrGenMissingStmtArgument IterName
     deriving (Eq, Show)
 
 newtype AstIterVar = AstIterVar String deriving (Eq, Ord, Show)
 
 instance IsString AstIterVar where fromString = AstIterVar
 
-newtype FrontendIterName = FrontendIterName String deriving (Eq, Ord, Show)
-
-instance IsString FrontendIterName where fromString = FrontendIterName
-
 newtype ExtentParamName = ExtentParamName String deriving (Eq, Ord, Show)
 
 instance IsString ExtentParamName where fromString = ExtentParamName
 
-newtype AstStmtName = AstStmtName String deriving (Eq, Ord, Show)
-
-instance IsString AstStmtName where fromString = AstStmtName
-
-data GenLoop = GenLoop
-    { astIterator :: AstIterVar
-    , frontendIter :: FrontendIterName
-    , extentParam :: ExtentParamName
+data GenTensorDecl = GenTensorDecl
+    { genTensor :: TensorName
+    , genShape :: [ExtentParamName]
     }
     deriving (Eq, Show)
 
-data GenStmtBinding = GenStmtBinding
-    { astStmtName :: AstStmtName
-    , astIndexVar :: AstIterVar
-    , frontendStmt :: Stmt
+data GenTensorRef = GenTensorRef
+    { genTensor :: TensorName
+    , genIndices :: [AstIterVar]
     }
+    deriving (Eq, Show)
+
+data GenExpr
+    = GenConst Int
+    | GenLoad GenTensorRef
+    | GenAdd GenExpr GenExpr
+    | GenMul GenExpr GenExpr
+    deriving (Eq, Show)
+
+data GenStmt
+    = GenFor
+        { genIter :: AstIterVar
+        , genBound :: ExtentParamName
+        , genBody :: [GenStmt]
+        }
+    | GenAssign
+        { genTarget :: GenTensorRef
+        , genExpr :: GenExpr
+        }
+    | GenReduction
+        { genReductionOp :: ReductionOp
+        , genTarget :: GenTensorRef
+        , genExpr :: GenExpr
+        }
     deriving (Eq, Show)
 
 data GenProgram = GenProgram
-    { loop :: GenLoop
-    , stmtBinding :: GenStmtBinding
+    { genExtentParams :: [ExtentParamName]
+    , genTensorDecls :: [GenTensorDecl]
+    , genBody :: [GenStmt]
     }
     deriving (Eq, Show)
 
+data BuildEnv = BuildEnv
+    { frontendAxes :: [Axis]
+    , frontendStmt :: Stmt
+    }
+
 buildGenProgram :: AstTree -> Program -> Either GenIRError GenProgram
-buildGenProgram ast program = do
-    axis <- expectSingleAxis program
-    stmt <- expectSingleStmt program
-    frontendIterName <- expectAssignStmtIter stmt
-    (loopIter, loopBound, body) <- parseTopLevelFor ast
-    (stmtName, stmtIndexVar) <- parseStmtCall body
-    let expectedStmtName = fromString "S0"
-    if stmtName == expectedStmtName
-        then pure ()
-        else Left $ ErrGenStmtNameMismatch expectedStmtName stmtName
-    if stmtIndexVar == loopIter
-        then pure ()
-        else Left $ ErrGenLoopAndCallIndexMismatch loopIter stmtIndexVar
-    let axisIterName = fromString $ iterNameToString axis.iter
-    if frontendIterName == axisIterName
-        then pure ()
-        else Left $ ErrGenAxisAndStmtIterMismatch axisIterName frontendIterName
-    let axisExtent = fromString $ paramNameToString axis.extent
-    if loopBound == axisExtent
-        then pure ()
-        else Left $ ErrGenLoopAndAxisBoundMismatch axisExtent loopBound
-    pure
-        GenProgram
-            { loop =
-                GenLoop
-                    { astIterator = loopIter
-                    , frontendIter = frontendIterName
-                    , extentParam = axisExtent
+buildGenProgram ast program =
+    case unwrapTree ast of
+        AstFor{} -> do
+            topLevelStmt <- lowerTree buildEnv ast
+            pure
+                GenProgram
+                    { genExtentParams = buildExtentParams program
+                    , genTensorDecls = buildTensorDecls program
+                    , genBody = [topLevelStmt]
                     }
-            , stmtBinding =
-                GenStmtBinding
-                    { astStmtName = stmtName
-                    , astIndexVar = stmtIndexVar
-                    , frontendStmt = stmt
-                    }
+        _ -> Left ErrGenExpectedTopLevelFor
+  where
+    buildEnv =
+        BuildEnv
+            { frontendAxes = NE.toList program.axes
+            , frontendStmt = NE.head program.stmts
             }
 
-expectSingleStmt :: Program -> Either GenIRError Stmt
-expectSingleStmt program =
-    case NE.toList program.stmts of
-        [stmt] -> pure stmt
-        stmts -> Left $ ErrGenExpectedSingleStatement (length stmts)
+buildExtentParams :: Program -> [ExtentParamName]
+buildExtentParams program =
+    fromString . paramNameToString . (.extent) <$> NE.toList program.axes
 
-expectSingleAxis :: Program -> Either GenIRError Axis
-expectSingleAxis program =
-    case NE.toList program.axes of
-        [axis] -> pure axis
-        axes -> Left $ ErrGenExpectedSingleAxis (length axes)
+buildTensorDecls :: Program -> [GenTensorDecl]
+buildTensorDecls program =
+    [ GenTensorDecl
+        { genTensor = tensorDecl.tensor
+        , genShape = fromString . paramNameToString <$> tensorDecl.shape
+        }
+    | tensorDecl <- NE.toList program.tensors
+    ]
 
-expectAssignStmtIter :: Stmt -> Either GenIRError FrontendIterName
-expectAssignStmtIter stmt =
-    case stmt of
-        Reduction{} -> Left ErrGenOnlyAssignSupported
-        Assign{} ->
-            case stmt.outputIndex of
-                [IxVar iterName] -> pure $ fromString $ iterNameToString iterName
-                indices -> Left $ ErrGenExpectedSingleOutputIndex (length indices)
-
-parseTopLevelFor :: AstTree -> Either GenIRError (AstIterVar, ExtentParamName, AstTree)
-parseTopLevelFor ast =
-    case ast of
-        AstMark _ inner -> parseTopLevelFor inner
-        AstBlock [single] -> parseTopLevelFor single
+lowerTree :: BuildEnv -> AstTree -> Either GenIRError GenStmt
+lowerTree env tree =
+    case unwrapTree tree of
         AstFor
             { forIterator = iterName
             , forInit = ExprInt 0
@@ -145,11 +131,79 @@ parseTopLevelFor ast =
             , forCond = cond
             , forBody = body
             } -> do
-                let loopIter = fromString iterName
-                bound <- parseUpperBound loopIter cond
-                pure (loopIter, bound, body)
+                bound <- parseUpperBound (fromString iterName) cond
+                loweredBody <- lowerNestedTree env body
+                pure
+                    GenFor
+                        { genIter = fromString iterName
+                        , genBound = bound
+                        , genBody = [loweredBody]
+                        }
         AstFor{} -> Left ErrGenExpectedCanonicalFor
-        _ -> Left ErrGenExpectedTopLevelFor
+        AstUser expr -> do
+            stmtArgs <- parseStmtCallExpr expr
+            lowerFrontendStmt
+                (buildIterSubst env.frontendAxes stmtArgs)
+                env.frontendStmt
+        _ -> Left ErrGenMalformedLoopNest
+
+lowerNestedTree :: BuildEnv -> AstTree -> Either GenIRError GenStmt
+lowerNestedTree env tree =
+    case unwrapTree tree of
+        AstFor{} -> lowerTree env tree
+        AstUser{} -> lowerTree env tree
+        _ -> Left ErrGenMalformedLoopNest
+
+buildIterSubst :: [Axis] -> [AstIterVar] -> Map.Map IterName AstIterVar
+buildIterSubst axes stmtArgs =
+    Map.fromList $ zip ((.iter) <$> axes) stmtArgs
+
+lowerFrontendStmt ::
+    Map.Map IterName AstIterVar ->
+    Stmt ->
+    Either GenIRError GenStmt
+lowerFrontendStmt iterSubst stmt =
+    case stmt of
+        Assign{} ->
+            GenAssign
+                <$> lowerTensorRef iterSubst stmt.outputTensor stmt.outputIndex
+                <*> lowerExpr iterSubst stmt.rhs
+        Reduction{} ->
+            GenReduction
+                <$> pure stmt.reductionOp
+                <*> lowerTensorRef iterSubst stmt.outputTensor stmt.outputIndex
+                <*> lowerExpr iterSubst stmt.rhs
+
+lowerTensorRef ::
+    Map.Map IterName AstIterVar ->
+    TensorName ->
+    [IxExpr] ->
+    Either GenIRError GenTensorRef
+lowerTensorRef iterSubst tensor indices =
+    GenTensorRef tensor <$> traverse (lowerIxExpr iterSubst) indices
+
+lowerExpr :: Map.Map IterName AstIterVar -> Expr -> Either GenIRError GenExpr
+lowerExpr iterSubst expr =
+    case expr of
+        EConst value -> pure $ GenConst value
+        ELoad tensor indices -> GenLoad <$> lowerTensorRef iterSubst tensor indices
+        EAdd lhs rhs -> GenAdd <$> lowerExpr iterSubst lhs <*> lowerExpr iterSubst rhs
+        EMul lhs rhs -> GenMul <$> lowerExpr iterSubst lhs <*> lowerExpr iterSubst rhs
+
+lowerIxExpr :: Map.Map IterName AstIterVar -> IxExpr -> Either GenIRError AstIterVar
+lowerIxExpr iterSubst ixExpr =
+    case ixExpr of
+        IxVar iterName ->
+            case Map.lookup iterName iterSubst of
+                Just astIter -> pure astIter
+                Nothing -> Left $ ErrGenMissingStmtArgument iterName
+
+unwrapTree :: AstTree -> AstTree
+unwrapTree tree =
+    case tree of
+        AstMark _ inner -> unwrapTree inner
+        AstBlock [single] -> unwrapTree single
+        _ -> tree
 
 parseUpperBound :: AstIterVar -> AstExpression -> Either GenIRError ExtentParamName
 parseUpperBound loopIter cond =
@@ -160,25 +214,14 @@ parseUpperBound loopIter cond =
                 | otherwise -> Left ErrGenExpectedLoopUpperBound
             _ -> Left ErrGenExpectedLoopUpperBound
 
-parseStmtCall :: AstTree -> Either GenIRError (AstStmtName, AstIterVar)
-parseStmtCall tree =
-    case tree of
-        AstMark _ inner -> parseStmtCall inner
-        AstBlock [single] -> parseStmtCall single
-        AstUser expr -> parseStmtCallExpr expr
-        _ -> Left ErrGenExpectedSingleStmtCall
-
-parseStmtCallExpr :: AstExpression -> Either GenIRError (AstStmtName, AstIterVar)
+parseStmtCallExpr :: AstExpression -> Either GenIRError [AstIterVar]
 parseStmtCallExpr expr =
     case expr of
-        ExprOp (OpCall (ExprId stmtName) args) ->
-            case args of
-                [ExprId indexVar] ->
-                    pure
-                        ( fromString stmtName
-                        , fromString indexVar
-                        )
-                [ExprInt _] -> Left ErrGenExpectedCallArgumentIdentifier
-                [_] -> Left ErrGenExpectedCallArgumentIdentifier
-                _ -> Left $ ErrGenExpectedSingleCallArgument (length args)
-        _ -> Left ErrGenExpectedStmtCallExpression
+        ExprOp (OpCall (ExprId _) args) ->
+            traverse parseCallArg args
+        _ -> Left ErrGenUnsupportedStmtCall
+  where
+    parseCallArg arg =
+        case arg of
+            ExprId indexVar -> Right $ fromString indexVar
+            _ -> Left ErrGenExpectedCallArgumentIdentifier

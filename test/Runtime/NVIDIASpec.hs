@@ -4,14 +4,14 @@ module Runtime.NVIDIASpec (spec) where
 
 import qualified Builder.NVIDIA as BuilderNVIDIA
 import           Builder.Types  (BuilderError (..))
-import           Codegen        (CudaDim (..))
 import           Runtime.NVIDIA (allocateDeviceBuffer, downloadTensorBuffer,
                                  freeDeviceBuffer, loadNvidiaKernel, runNVIDIA,
                                  runNvidiaKernel,
                                  runNvidiaKernelWithHostBuffers,
                                  uploadTensorBuffer)
 import           Runtime.Types  (KernelArg (..), KernelSignature (..),
-                                 RuntimeError (..), emptyTensorBuffer,
+                                 KernelTensorParam (..), RuntimeError (..),
+                                 ThreadBlockShape (..), emptyTensorBuffer,
                                  readTensorBuffer, tensorBufferFromList)
 import           Test.Hspec
 
@@ -21,13 +21,13 @@ spec = do
         it "compiles and runs a copy kernel with host-buffer staging" $ do
             output <- emptyTensorBuffer 4
             input <- tensorBufferFromList [1, 2, 3, 4]
-            compiledKernel <- expectCompiledCudaProgram copyKernelSignature CudaX copyKernel
+            compiledKernel <- expectCompiledCudaProgram copyKernelSignature copyKernel
 
             actual <- runNVIDIA $ do
                 loadedKernel <- loadNvidiaKernel compiledKernel
                 runNvidiaKernelWithHostBuffers
                     loadedKernel
-                    64
+                    ThreadBlockShape{blockDimX = 64, blockDimY = 1, blockDimZ = 1}
                     [ KernelArgInt 4
                     , KernelArgTensor output
                     , KernelArgTensor input
@@ -40,7 +40,7 @@ spec = do
             output <- emptyTensorBuffer 4
             lhs <- tensorBufferFromList [1, 2, 3, 4]
             rhs <- tensorBufferFromList [5, 6, 7, 8]
-            compiledKernel <- expectCompiledCudaProgram addKernelSignature CudaX addKernel
+            compiledKernel <- expectCompiledCudaProgram addKernelSignature addKernel
 
             actual <- runNVIDIA $ do
                 loadedKernel <- loadNvidiaKernel compiledKernel
@@ -49,7 +49,11 @@ spec = do
                 rhsBuffer <- allocateDeviceBuffer 4
                 uploadTensorBuffer lhs lhsBuffer
                 uploadTensorBuffer rhs rhsBuffer
-                runNvidiaKernel loadedKernel 128 4 [outputBuffer, lhsBuffer, rhsBuffer]
+                runNvidiaKernel
+                    loadedKernel
+                    ThreadBlockShape{blockDimX = 128, blockDimY = 1, blockDimZ = 1}
+                    [4]
+                    [outputBuffer, lhsBuffer, rhsBuffer]
                 downloadTensorBuffer outputBuffer output
                 freeDeviceBuffer outputBuffer
                 freeDeviceBuffer lhsBuffer
@@ -59,19 +63,19 @@ spec = do
             readTensorBuffer output `shouldReturn` [6, 8, 10, 12]
 
         it "reports NVRTC compilation failures" $ do
-            BuilderNVIDIA.compileCudaProgram copyKernelSignature CudaX malformedKernel
+            BuilderNVIDIA.compileCudaProgram copyKernelSignature malformedKernel
                 >>= (`shouldSatisfy` isNvrtcFailure)
 
         it "rejects invalid thread block sizes before launch" $ do
             output <- emptyTensorBuffer 4
             input <- tensorBufferFromList [1, 2, 3, 4]
-            compiledKernel <- expectCompiledCudaProgram copyKernelSignature CudaX copyKernel
+            compiledKernel <- expectCompiledCudaProgram copyKernelSignature copyKernel
 
             actual <- runNVIDIA $ do
                 loadedKernel <- loadNvidiaKernel compiledKernel
                 runNvidiaKernelWithHostBuffers
                     loadedKernel
-                    0
+                    ThreadBlockShape{blockDimX = 0, blockDimY = 1, blockDimZ = 1}
                     [ KernelArgInt 4
                     , KernelArgTensor output
                     , KernelArgTensor input
@@ -82,13 +86,13 @@ spec = do
         it "rejects tensor buffers smaller than the requested extent" $ do
             output <- emptyTensorBuffer 2
             input <- tensorBufferFromList [1, 2]
-            compiledKernel <- expectCompiledCudaProgram copyKernelSignature CudaX copyKernel
+            compiledKernel <- expectCompiledCudaProgram copyKernelSignature copyKernel
 
             actual <- runNVIDIA $ do
                 loadedKernel <- loadNvidiaKernel compiledKernel
                 runNvidiaKernelWithHostBuffers
                     loadedKernel
-                    32
+                    ThreadBlockShape{blockDimX = 32, blockDimY = 1, blockDimZ = 1}
                     [ KernelArgInt 4
                     , KernelArgTensor output
                     , KernelArgTensor input
@@ -98,11 +102,10 @@ spec = do
 
 expectCompiledCudaProgram ::
     KernelSignature ->
-    CudaDim ->
     String ->
     IO BuilderNVIDIA.CompiledCudaProgram
-expectCompiledCudaProgram kernelSignature cudaDim source = do
-    Right compiledProgram <- BuilderNVIDIA.compileCudaProgram kernelSignature cudaDim source
+expectCompiledCudaProgram kernelSignature source = do
+    Right compiledProgram <- BuilderNVIDIA.compileCudaProgram kernelSignature source
     pure compiledProgram
 
 isNvrtcFailure :: Either BuilderError a -> Bool
@@ -113,15 +116,22 @@ isNvrtcFailure = \case
 copyKernelSignature :: KernelSignature
 copyKernelSignature =
     KernelSignature
-        { extentParamName = "N"
-        , tensorParamNames = ["A", "B"]
+        { extentParamNames = ["N"]
+        , tensorParams =
+            [ KernelTensorParam{tensorParamName = "A", tensorShapeParamNames = ["N"]}
+            , KernelTensorParam{tensorParamName = "B", tensorShapeParamNames = ["N"]}
+            ]
         }
 
 addKernelSignature :: KernelSignature
 addKernelSignature =
     KernelSignature
-        { extentParamName = "N"
-        , tensorParamNames = ["A", "B", "C"]
+        { extentParamNames = ["N"]
+        , tensorParams =
+            [ KernelTensorParam{tensorParamName = "A", tensorShapeParamNames = ["N"]}
+            , KernelTensorParam{tensorParamName = "B", tensorShapeParamNames = ["N"]}
+            , KernelTensorParam{tensorParamName = "C", tensorShapeParamNames = ["N"]}
+            ]
         }
 
 copyKernel :: String

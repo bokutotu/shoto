@@ -11,20 +11,18 @@ module Codegen.C.Ast (
     lowerToCProgram,
 ) where
 
-import           Codegen.GenIR    (AstIterVar, ExtentParamName,
-                                   FrontendIterName, GenLoop (..),
-                                   GenProgram (..), GenStmtBinding (..))
+import           Codegen.GenIR    (AstIterVar, ExtentParamName (..),
+                                   GenExpr (..), GenProgram (..), GenStmt (..),
+                                   GenTensorDecl (..), GenTensorRef (..))
 import qualified Data.Map.Strict  as Map
 import qualified Data.Set         as Set
 import           Data.String      (IsString (fromString))
-import           FrontendIR.Types (Expr (..), IxExpr (..), Stmt (..),
-                                   iterNameToString, tensorNameToString)
+import           FrontendIR.Types (TensorName, tensorNameToString)
 
 data CAstError
     = ErrCAstReductionNotSupported
-    | ErrCAstExpectedSingleStoreIndex Int
-    | ErrCAstExpectedSingleLoadIndex Int
-    | ErrCAstUnknownIterBinding FrontendIterName
+    | ErrCAstUnknownTensorShape TensorName
+    | ErrCAstTensorRankMismatch TensorName Int Int
     deriving (Eq, Show)
 
 newtype CFunctionName = CFunctionName String deriving (Eq, Ord, Show)
@@ -63,7 +61,7 @@ data CStmt
 
 data CProgram = CProgram
     { cFunctionName :: CFunctionName
-    , cExtentParam :: ExtentParamName
+    , cExtentParams :: [ExtentParamName]
     , cTensorArgs :: [CTensorName]
     , cBody :: [CStmt]
     }
@@ -71,86 +69,129 @@ data CProgram = CProgram
 
 lowerToCProgram :: GenProgram -> Either CAstError CProgram
 lowerToCProgram genProgram = do
-    (target, rhsExpr, tensorArgs) <- lowerAssign genProgram
-    let loopInfo = genProgram.loop
+    cBody <- lowerStmts tensorShapes genProgram.genBody
     pure
         CProgram
             { cFunctionName = fromString "shoto_kernel"
-            , cExtentParam = loopInfo.extentParam
-            , cTensorArgs = tensorArgs
-            , cBody =
-                [ CForLoop
-                    { cForVar = loopInfo.astIterator
-                    , cForUpperBound = loopInfo.extentParam
-                    , cForBody =
-                        [ CAssign
-                            { cAssignTarget = target
-                            , cAssignExpr = rhsExpr
-                            }
-                        ]
-                    }
-                ]
+            , cExtentParams = genProgram.genExtentParams
+            , cTensorArgs = collectTensorArgs genProgram.genBody
+            , cBody
+            }
+  where
+    tensorShapes = buildTensorShapeMap genProgram.genTensorDecls
+
+lowerStmts ::
+    Map.Map TensorName [ExtentParamName] ->
+    [GenStmt] ->
+    Either CAstError [CStmt]
+lowerStmts tensorShapes =
+    traverse (lowerStmt tensorShapes)
+
+lowerStmt ::
+    Map.Map TensorName [ExtentParamName] ->
+    GenStmt ->
+    Either CAstError CStmt
+lowerStmt tensorShapes stmt =
+    case stmt of
+        GenFor{} ->
+            CForLoop
+                <$> pure stmt.genIter
+                <*> pure stmt.genBound
+                <*> lowerStmts tensorShapes stmt.genBody
+        GenAssign{} ->
+            CAssign
+                <$> lowerTensorRef tensorShapes stmt.genTarget
+                <*> lowerExpr tensorShapes stmt.genExpr
+        GenReduction{} -> Left ErrCAstReductionNotSupported
+
+lowerExpr ::
+    Map.Map TensorName [ExtentParamName] ->
+    GenExpr ->
+    Either CAstError CExpr
+lowerExpr tensorShapes expr =
+    case expr of
+        GenConst value -> pure $ CInt value
+        GenLoad ref -> do
+            loweredRef <- lowerTensorRef tensorShapes ref
+            pure $ CLoad loweredRef.tensorName loweredRef.tensorIndices
+        GenAdd lhs rhs -> CAdd <$> lowerExpr tensorShapes lhs <*> lowerExpr tensorShapes rhs
+        GenMul lhs rhs -> CMul <$> lowerExpr tensorShapes lhs <*> lowerExpr tensorShapes rhs
+
+lowerTensorRef ::
+    Map.Map TensorName [ExtentParamName] ->
+    GenTensorRef ->
+    Either CAstError CTensorRef
+lowerTensorRef tensorShapes ref = do
+    shapeParams <- lookupTensorShape tensorShapes ref.genTensor
+    flatIndex <- flattenRowMajor ref.genTensor (CVar <$> ref.genIndices) shapeParams
+    pure
+        CTensorRef
+            { tensorName = fromString $ tensorNameToString ref.genTensor
+            , tensorIndices = [flatIndex]
             }
 
-lowerAssign :: GenProgram -> Either CAstError (CTensorRef, CExpr, [CTensorName])
-lowerAssign genProgram =
-    case genProgram.stmtBinding.frontendStmt of
-        Reduction{} -> Left ErrCAstReductionNotSupported
-        Assign{} -> do
-            let iterMap =
-                    Map.singleton
-                        genProgram.loop.frontendIter
-                        genProgram.stmtBinding.astIndexVar
-            storeIndices <- traverse (lowerIxExpr iterMap) genProgram.stmtBinding.frontendStmt.outputIndex
-            case storeIndices of
-                [singleStoreIndex] -> do
-                    rhsExpr <- lowerExpr iterMap genProgram.stmtBinding.frontendStmt.rhs
-                    let outputTensorName =
-                            fromString $
-                                tensorNameToString genProgram.stmtBinding.frontendStmt.outputTensor
-                        tensorArgs =
-                            uniqueStable
-                                ( outputTensorName
-                                    : collectLoadTensors genProgram.stmtBinding.frontendStmt.rhs
-                                )
-                    pure
-                        ( CTensorRef
-                            { tensorName = outputTensorName
-                            , tensorIndices = [singleStoreIndex]
-                            }
-                        , rhsExpr
-                        , tensorArgs
-                        )
-                _ -> Left $ ErrCAstExpectedSingleStoreIndex (length storeIndices)
+lookupTensorShape ::
+    Map.Map TensorName [ExtentParamName] ->
+    TensorName ->
+    Either CAstError [ExtentParamName]
+lookupTensorShape tensorShapes tensor =
+    case Map.lookup tensor tensorShapes of
+        Just shapeParams -> pure shapeParams
+        Nothing -> Left $ ErrCAstUnknownTensorShape tensor
 
-lowerExpr :: Map.Map FrontendIterName AstIterVar -> Expr -> Either CAstError CExpr
-lowerExpr iterMap expr =
-    case expr of
-        EConst value -> pure $ CInt value
-        ELoad tensor indices -> do
-            loweredIndices <- traverse (lowerIxExpr iterMap) indices
-            case loweredIndices of
-                [_] -> pure $ CLoad (fromString $ tensorNameToString tensor) loweredIndices
-                _ -> Left $ ErrCAstExpectedSingleLoadIndex (length loweredIndices)
-        EAdd lhs rhs -> CAdd <$> lowerExpr iterMap lhs <*> lowerExpr iterMap rhs
-        EMul lhs rhs -> CMul <$> lowerExpr iterMap lhs <*> lowerExpr iterMap rhs
+flattenRowMajor ::
+    TensorName ->
+    [CExpr] ->
+    [ExtentParamName] ->
+    Either CAstError CExpr
+flattenRowMajor tensor loweredIndices shapeParams
+    | length loweredIndices /= length shapeParams =
+        Left $
+            ErrCAstTensorRankMismatch
+                tensor
+                (length shapeParams)
+                (length loweredIndices)
+    | otherwise =
+        case (loweredIndices, shapeParams) of
+            ([], []) -> pure $ CInt 0
+            (firstIndex : restIndices, _ : restShapeParams) ->
+                pure $ foldl step firstIndex (zip restIndices restShapeParams)
+            _ -> Left $ ErrCAstTensorRankMismatch tensor (length shapeParams) (length loweredIndices)
+  where
+    step acc (indexExpr, extentParam) =
+        CAdd
+            (CMul acc (CVar (fromString (extentParamName extentParam))))
+            indexExpr
 
-lowerIxExpr :: Map.Map FrontendIterName AstIterVar -> IxExpr -> Either CAstError CExpr
-lowerIxExpr iterMap ixExpr =
-    case ixExpr of
-        IxVar iterName ->
-            let iterKey = fromString $ iterNameToString iterName
-             in case Map.lookup iterKey iterMap of
-                    Just loweredName -> pure $ CVar loweredName
-                    Nothing -> Left $ ErrCAstUnknownIterBinding iterKey
+    extentParamName (ExtentParamName name) = name
 
-collectLoadTensors :: Expr -> [CTensorName]
-collectLoadTensors expr =
-    case expr of
-        EConst _ -> []
-        ELoad tensor _ -> [fromString $ tensorNameToString tensor]
-        EAdd lhs rhs -> collectLoadTensors lhs <> collectLoadTensors rhs
-        EMul lhs rhs -> collectLoadTensors lhs <> collectLoadTensors rhs
+buildTensorShapeMap :: [GenTensorDecl] -> Map.Map TensorName [ExtentParamName]
+buildTensorShapeMap tensorDecls =
+    Map.fromList
+        [ (tensorDecl.genTensor, tensorDecl.genShape)
+        | tensorDecl <- tensorDecls
+        ]
+
+collectTensorArgs :: [GenStmt] -> [CTensorName]
+collectTensorArgs stmts =
+    uniqueStable $ concatMap collectStmtTensors stmts
+  where
+    collectStmtTensors stmt =
+        case stmt of
+            GenFor{} -> collectTensorArgs stmt.genBody
+            GenAssign{} ->
+                fromString (tensorNameToString stmt.genTarget.genTensor)
+                    : collectExprTensors stmt.genExpr
+            GenReduction{} ->
+                fromString (tensorNameToString stmt.genTarget.genTensor)
+                    : collectExprTensors stmt.genExpr
+
+    collectExprTensors expr =
+        case expr of
+            GenConst _ -> []
+            GenLoad ref -> [fromString $ tensorNameToString ref.genTensor]
+            GenAdd lhs rhs -> collectExprTensors lhs <> collectExprTensors rhs
+            GenMul lhs rhs -> collectExprTensors lhs <> collectExprTensors rhs
 
 uniqueStable :: (Ord a) => [a] -> [a]
 uniqueStable = go Set.empty

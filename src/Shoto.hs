@@ -1,13 +1,11 @@
 module Shoto (
     CompileError (..),
     DeviceConfig (..),
-    CudaDim (..),
     compile,
     compileM,
 ) where
 
-import           Codegen                (CodegenError, CudaDim (..), generateC,
-                                         generateCuda)
+import           Codegen                (CodegenError, generateC, generateCuda)
 import           Control.Monad.Except   (MonadError (throwError), runExceptT)
 import           Control.Monad.IO.Class (MonadIO (liftIO))
 import           FrontendIR             (FrontendError, Program, lowerProgram)
@@ -17,7 +15,7 @@ import           Polyhedral.Internal    (AstTree, runISL)
 
 data DeviceConfig
     = CPU
-    | GPU CudaDim
+    | GPU
     deriving (Eq, Show)
 
 data CompileError
@@ -28,7 +26,7 @@ data CompileError
 
 runCodegen :: DeviceConfig -> AstTree -> Program -> Either CodegenError String
 runCodegen CPU ast program = generateC ast program
-runCodegen (GPU dim) ast program = generateCuda dim ast program
+runCodegen GPU ast program = generateCuda ast program
 
 compileM ::
     (MonadIO m, MonadError CompileError m) =>

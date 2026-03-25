@@ -10,8 +10,9 @@ import           Control.Exception (finally)
 import           Control.Monad     (join)
 import           Runtime.CPU       (runCPUKernel, withLoadedCPUKernel)
 import           Runtime.Types     (KernelArg (..), KernelSignature (..),
-                                    RuntimeError (..), emptyTensorBuffer,
-                                    readTensorBuffer, tensorBufferFromList)
+                                    KernelTensorParam (..), RuntimeError (..),
+                                    emptyTensorBuffer, readTensorBuffer,
+                                    tensorBufferFromList)
 import           Test.Hspec
 
 spec :: Spec
@@ -32,6 +33,23 @@ spec = do
                             ]
 
             appendDispatchWrapper copyKernel copyKernelSignature `shouldBe` expected
+
+        it "adds the dispatch wrapper for multiple extent parameters" $ do
+            let expected =
+                    copy2DKernel
+                        <> "\n"
+                        <> unlines
+                            [ "void shoto_dispatch(int argc, void** args) {"
+                            , "    (void)argc;"
+                            , "    int* N_arg = (int*)args[0];"
+                            , "    int* M_arg = (int*)args[1];"
+                            , "    float* A_arg = (float*)args[2];"
+                            , "    float* B_arg = (float*)args[3];"
+                            , "    shoto_kernel(*N_arg, *M_arg, A_arg, B_arg);"
+                            , "}"
+                            ]
+
+            appendDispatchWrapper copy2DKernel copy2DKernelSignature `shouldBe` expected
 
     describe "Runtime.CPU" $ do
         it "compiles and runs a copy kernel" $ do
@@ -133,6 +151,38 @@ spec = do
 
             actual `shouldBe` Left (ErrRuntimeTensorTooSmall 1 4 2)
 
+        it "compiles and runs a 2D copy kernel with flat buffers" $ do
+            output <- emptyTensorBuffer 6
+            input <- tensorBufferFromList [1, 2, 3, 4, 5, 6]
+
+            actual <- withCompiledSharedObject copy2DKernelSignature copy2DKernel $ \compiledSharedObject ->
+                runCompiledKernel
+                    compiledSharedObject
+                    [ KernelArgInt 2
+                    , KernelArgInt 3
+                    , KernelArgTensor output
+                    , KernelArgTensor input
+                    ]
+
+            actual `shouldBe` Right ()
+            actualOutput <- readTensorBuffer output
+            actualOutput `shouldBe` [1, 2, 3, 4, 5, 6]
+
+        it "rejects buffers smaller than the multi-extent element product" $ do
+            output <- emptyTensorBuffer 5
+            input <- tensorBufferFromList [1, 2, 3, 4, 5]
+
+            actual <- withCompiledSharedObject copy2DKernelSignature copy2DKernel $ \compiledSharedObject ->
+                runCompiledKernel
+                    compiledSharedObject
+                    [ KernelArgInt 2
+                    , KernelArgInt 3
+                    , KernelArgTensor output
+                    , KernelArgTensor input
+                    ]
+
+            actual `shouldBe` Left (ErrRuntimeTensorTooSmall 1 6 5)
+
 withCompiledSharedObject ::
     KernelSignature ->
     String ->
@@ -157,8 +207,11 @@ isGccFailure = \case
 copyKernelSignature :: KernelSignature
 copyKernelSignature =
     KernelSignature
-        { extentParamName = "N"
-        , tensorParamNames = ["A", "B"]
+        { extentParamNames = ["N"]
+        , tensorParams =
+            [ KernelTensorParam{tensorParamName = "A", tensorShapeParamNames = ["N"]}
+            , KernelTensorParam{tensorParamName = "B", tensorShapeParamNames = ["N"]}
+            ]
         }
 
 copyKernel :: String
@@ -171,11 +224,37 @@ copyKernel =
         , "}"
         ]
 
+copy2DKernelSignature :: KernelSignature
+copy2DKernelSignature =
+    KernelSignature
+        { extentParamNames = ["N", "M"]
+        , tensorParams =
+            [ KernelTensorParam{tensorParamName = "A", tensorShapeParamNames = ["N", "M"]}
+            , KernelTensorParam{tensorParamName = "B", tensorShapeParamNames = ["N", "M"]}
+            ]
+        }
+
+copy2DKernel :: String
+copy2DKernel =
+    unlines
+        [ "void shoto_kernel(int N, int M, float* A, float* B) {"
+        , "    for (int i = 0; i < N; ++i) {"
+        , "        for (int j = 0; j < M; ++j) {"
+        , "            A[(i * M) + j] = B[(i * M) + j];"
+        , "        }"
+        , "    }"
+        , "}"
+        ]
+
 addKernelSignature :: KernelSignature
 addKernelSignature =
     KernelSignature
-        { extentParamName = "N"
-        , tensorParamNames = ["A", "B", "C"]
+        { extentParamNames = ["N"]
+        , tensorParams =
+            [ KernelTensorParam{tensorParamName = "A", tensorShapeParamNames = ["N"]}
+            , KernelTensorParam{tensorParamName = "B", tensorShapeParamNames = ["N"]}
+            , KernelTensorParam{tensorParamName = "C", tensorShapeParamNames = ["N"]}
+            ]
         }
 
 addKernel :: String
@@ -201,6 +280,7 @@ restrictCopyKernel =
 malformedKernelSignature :: KernelSignature
 malformedKernelSignature =
     KernelSignature
-        { extentParamName = "N"
-        , tensorParamNames = ["A"]
+        { extentParamNames = ["N"]
+        , tensorParams =
+            [KernelTensorParam{tensorParamName = "A", tensorShapeParamNames = ["N"]}]
         }

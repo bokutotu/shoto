@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Runtime.NVIDIA (
@@ -15,10 +16,10 @@ module Runtime.NVIDIA (
 ) where
 
 import           Builder.NVIDIA.Types           (CompiledCudaProgram (..))
-import           Codegen.CUDA.Ast               (CudaDim (..))
 import           Control.Monad                  (unless, zipWithM_)
 import           Control.Monad.Except           (MonadError (catchError, throwError))
 import           Data.Foldable                  (traverse_)
+import qualified Data.Map.Strict                as Map
 import           Foreign.C.Types                (CFloat, CInt)
 import           Foreign.Storable               (sizeOf)
 import qualified Runtime.NVIDIA.Internal.Memory as CUDA
@@ -28,8 +29,10 @@ import           Runtime.NVIDIA.Types           (DeviceBuffer (..),
                                                  NVIDIA, runNVIDIA)
 import           Runtime.Types                  (KernelArg (..),
                                                  KernelSignature (..),
+                                                 KernelTensorParam (..),
                                                  RuntimeError (..),
-                                                 TensorBuffer (..))
+                                                 TensorBuffer (..),
+                                                 ThreadBlockShape (..))
 
 loadNvidiaKernel :: CompiledCudaProgram -> NVIDIA s (LoadedNvidiaKernel s)
 loadNvidiaKernel compiledCudaProgram = do
@@ -38,7 +41,6 @@ loadNvidiaKernel compiledCudaProgram = do
     pure
         LoadedNvidiaKernel
             { loadedKernelSignature = compiledCudaProgram.compiledKernelSignature
-            , loadedCudaDim = compiledCudaProgram.compiledCudaDim
             , loadedModule
             , loadedFunction
             }
@@ -81,32 +83,35 @@ downloadTensorBuffer deviceBuffer tensorBuffer
             (tensorByteCount deviceBuffer.deviceBufferElements)
             tensorBuffer.tensorData
 
-runNvidiaKernel :: LoadedNvidiaKernel s -> Int -> Int -> [DeviceBuffer s] -> NVIDIA s ()
-runNvidiaKernel loadedNvidiaKernel threadBlockSize extentValue deviceBuffers = do
-    validateLaunch loadedNvidiaKernel.loadedKernelSignature threadBlockSize extentValue deviceBuffers
-    let gridDim =
-            dim3ForAxis
-                loadedNvidiaKernel.loadedCudaDim
-                (fromIntegral $ max 1 $ ceilDiv extentValue threadBlockSize)
-        blockDim =
-            dim3ForAxis
-                loadedNvidiaKernel.loadedCudaDim
-                (fromIntegral threadBlockSize)
-        kernelArgs =
-            CUDA.KernelArgInt extentValue
-                : (CUDA.KernelArgDevicePtr . (.deviceBufferPtr) <$> deviceBuffers)
+runNvidiaKernel ::
+    LoadedNvidiaKernel s ->
+    ThreadBlockShape ->
+    [Int] ->
+    [DeviceBuffer s] ->
+    NVIDIA s ()
+runNvidiaKernel loadedNvidiaKernel threadBlockShape extentValues deviceBuffers = do
+    validateLaunch loadedNvidiaKernel.loadedKernelSignature threadBlockShape extentValues deviceBuffers
+    let blockDim = blockDimFromShape threadBlockShape
+    gridDim <- either throwError pure $ gridDimForExtents threadBlockShape extentValues
+    let kernelArgs =
+            (CUDA.KernelArgInt <$> extentValues)
+                <> (CUDA.KernelArgDevicePtr . (.deviceBufferPtr) <$> deviceBuffers)
     CUDA.launchKernel loadedNvidiaKernel.loadedFunction gridDim blockDim kernelArgs
     CUDA.synchronize
 
-runNvidiaKernelWithHostBuffers :: LoadedNvidiaKernel s -> Int -> [KernelArg] -> NVIDIA s ()
-runNvidiaKernelWithHostBuffers loadedNvidiaKernel threadBlockSize kernelArgs = do
-    extentValue <-
-        either throwError pure $ validateHostKernelArgs loadedNvidiaKernel.loadedKernelSignature kernelArgs
-    let tensorBuffers = extractTensorBuffers kernelArgs
+runNvidiaKernelWithHostBuffers ::
+    LoadedNvidiaKernel s ->
+    ThreadBlockShape ->
+    [KernelArg] ->
+    NVIDIA s ()
+runNvidiaKernelWithHostBuffers loadedNvidiaKernel threadBlockShape kernelArgs = do
+    (extentValues, tensorBuffers) <-
+        either throwError pure $
+            validateHostKernelArgs loadedNvidiaKernel.loadedKernelSignature kernelArgs
     deviceBuffers <- allocateAndUploadAll tensorBuffers
     let freeAllBuffers = traverse_ freeDeviceBuffer deviceBuffers
         downloadAllBuffers = zipWithM_ downloadTensorBuffer deviceBuffers tensorBuffers
-    (runNvidiaKernel loadedNvidiaKernel threadBlockSize extentValue deviceBuffers >> downloadAllBuffers)
+    (runNvidiaKernel loadedNvidiaKernel threadBlockShape extentValues deviceBuffers >> downloadAllBuffers)
         `catchError` (\runtimeError -> freeAllBuffers >> throwError runtimeError)
     freeAllBuffers
 
@@ -128,79 +133,176 @@ allocateAndUploadAll = go []
                 traverse_ freeDeviceBuffer reversedDeviceBuffers
                 throwError runtimeError
 
-validateLaunch :: KernelSignature -> Int -> Int -> [DeviceBuffer s] -> NVIDIA s ()
-validateLaunch kernelSignature threadBlockSize extentValue deviceBuffers = do
-    unless (threadBlockSize > 0 && threadBlockSize <= 1024) $
+validateLaunch ::
+    KernelSignature ->
+    ThreadBlockShape ->
+    [Int] ->
+    [DeviceBuffer s] ->
+    NVIDIA s ()
+validateLaunch kernelSignature threadBlockShape extentValues deviceBuffers = do
+    either throwError pure $ validateThreadBlockShape threadBlockShape
+    either throwError pure $ validateExtentValues extentValues
+
+    let expectedExtentCount = length kernelSignature.extentParamNames
+        actualExtentCount = length extentValues
+    unless (actualExtentCount == expectedExtentCount) $
         throwError $
-            ErrRuntimeInvalidThreadBlockSize threadBlockSize
+            ErrRuntimeArgCountMismatch expectedExtentCount actualExtentCount
 
-    whenNegativeExtent extentValue
-    whenExtentOutOfRange extentValue
-
-    let expectedTensorCount = length kernelSignature.tensorParamNames
+    let expectedTensorCount = length kernelSignature.tensorParams
         actualTensorCount = length deviceBuffers
     unless (actualTensorCount == expectedTensorCount) $
         throwError $
             ErrRuntimeDeviceArgCountMismatch expectedTensorCount actualTensorCount
 
-    zipWithM_ validateDeviceBuffer [1 :: Int ..] deviceBuffers
-  where
-    validateDeviceBuffer _ deviceBuffer
-        | deviceBuffer.deviceBufferElements < extentValue =
-            throwError $
-                ErrRuntimeDeviceBufferTooSmall
-                    deviceBuffer.deviceBufferElements
-                    extentValue
-        | otherwise = pure ()
+    let extentMap = extentValueMap kernelSignature extentValues
+    zipWithM_
+        (validateDeviceBuffer extentMap)
+        [1 :: Int ..]
+        (zip kernelSignature.tensorParams deviceBuffers)
 
-validateHostKernelArgs :: KernelSignature -> [KernelArg] -> Either RuntimeError Int
+validateDeviceBuffer ::
+    Map.Map String Int ->
+    Int ->
+    (KernelTensorParam, DeviceBuffer s) ->
+    NVIDIA s ()
+validateDeviceBuffer extentMap _argIndex (tensorParam, deviceBuffer)
+    | deviceBuffer.deviceBufferElements < requiredElements =
+        throwError $
+            ErrRuntimeDeviceBufferTooSmall
+                deviceBuffer.deviceBufferElements
+                requiredElements
+    | otherwise = pure ()
+  where
+    requiredElements = requiredTensorElements extentMap tensorParam
+
+validateHostKernelArgs ::
+    KernelSignature ->
+    [KernelArg] ->
+    Either RuntimeError ([Int], [TensorBuffer])
 validateHostKernelArgs kernelSignature kernelArgs = do
-    let expectedArgCount = 1 + length kernelSignature.tensorParamNames
+    let extentCount = length kernelSignature.extentParamNames
+        expectedArgCount = extentCount + length kernelSignature.tensorParams
         actualArgCount = length kernelArgs
     unlessEither (actualArgCount == expectedArgCount) $
         ErrRuntimeArgCountMismatch expectedArgCount actualArgCount
 
-    extentValue <-
-        case kernelArgs of
-            KernelArgInt hostExtentValue : _ -> Right hostExtentValue
-            _ -> Left ErrRuntimeExpectedExtentArg
+    let (extentArgs, tensorArgs) = splitAt extentCount kernelArgs
+    extentValues <- traverse expectExtentArg extentArgs
+    mapM_ validateExtentValue extentValues
+    let extentMap = extentValueMap kernelSignature extentValues
+    tensorBuffers <-
+        zipWithMEither
+            (\argIndex (tensorParam, kernelArg) -> validateTensorArg extentMap argIndex tensorParam kernelArg)
+            [1 :: Int ..]
+            (zip kernelSignature.tensorParams tensorArgs)
+    pure (extentValues, tensorBuffers)
+  where
+    expectExtentArg = \case
+        KernelArgInt extentValue -> Right extentValue
+        _ -> Left ErrRuntimeExpectedExtentArg
 
-    if extentValue < 0
-        then Left $ ErrRuntimeNegativeExtent extentValue
-        else Right ()
-
-    if extentValue > fromIntegral (maxBound :: CInt)
-        then Left $ ErrRuntimeExtentOutOfRange extentValue
-        else Right ()
-
-    zipWithMEither (validateTensorArg extentValue) [1 :: Int ..] (drop 1 kernelArgs)
-    pure extentValue
-
-validateTensorArg :: Int -> Int -> KernelArg -> Either RuntimeError ()
-validateTensorArg extentValue argIndex kernelArg =
+validateTensorArg ::
+    Map.Map String Int ->
+    Int ->
+    KernelTensorParam ->
+    KernelArg ->
+    Either RuntimeError TensorBuffer
+validateTensorArg extentMap argIndex tensorParam kernelArg =
     case kernelArg of
         KernelArgInt _ -> Left $ ErrRuntimeExpectedTensorArg argIndex
         KernelArgTensor tensorBuffer
-            | tensorBuffer.tensorElements < extentValue ->
+            | tensorBuffer.tensorElements < requiredElements ->
                 Left $
                     ErrRuntimeTensorTooSmall
                         argIndex
-                        extentValue
+                        requiredElements
                         tensorBuffer.tensorElements
-            | otherwise -> Right ()
+            | otherwise -> Right tensorBuffer
+  where
+    requiredElements = requiredTensorElements extentMap tensorParam
 
-extractTensorBuffers :: [KernelArg] -> [TensorBuffer]
-extractTensorBuffers kernelArgs =
-    [ tensorBuffer
-    | KernelArgTensor tensorBuffer <- drop 1 kernelArgs
-    ]
+requiredTensorElements :: Map.Map String Int -> KernelTensorParam -> Int
+requiredTensorElements extentMap tensorParam =
+    product $
+        fmap
+            (\shapeParamName -> Map.findWithDefault 1 shapeParamName extentMap)
+            tensorParam.tensorShapeParamNames
 
-dim3ForAxis :: CudaDim -> Int -> CUDA.Dim3
-dim3ForAxis cudaDim selectedExtent =
-    case cudaDim of
-        CudaX -> CUDA.Dim3{dimX = fromIntegral selectedExtent, dimY = 1, dimZ = 1}
-        CudaY -> CUDA.Dim3{dimX = 1, dimY = fromIntegral selectedExtent, dimZ = 1}
-        CudaZ -> CUDA.Dim3{dimX = 1, dimY = 1, dimZ = fromIntegral selectedExtent}
+extentValueMap :: KernelSignature -> [Int] -> Map.Map String Int
+extentValueMap kernelSignature extentValues =
+    Map.fromList $
+        zip kernelSignature.extentParamNames extentValues
+
+validateThreadBlockShape :: ThreadBlockShape -> Either RuntimeError ()
+validateThreadBlockShape threadBlockShape = do
+    mapM_
+        validatePositive
+        [threadBlockShape.blockDimX, threadBlockShape.blockDimY, threadBlockShape.blockDimZ]
+    unlessEither (threadCount <= 1024) $
+        ErrRuntimeCudaUsageError "thread block shape exceeds 1024 threads"
+  where
+    threadCount =
+        threadBlockShape.blockDimX
+            * threadBlockShape.blockDimY
+            * threadBlockShape.blockDimZ
+
+    validatePositive dim =
+        unlessEither (dim > 0) $
+            ErrRuntimeInvalidThreadBlockSize dim
+
+validateExtentValues :: [Int] -> Either RuntimeError ()
+validateExtentValues =
+    mapM_ validateExtentValue
+
+validateExtentValue :: Int -> Either RuntimeError ()
+validateExtentValue extentValue = do
+    whenNegativeExtent extentValue
+    whenExtentOutOfRange extentValue
+
+blockDimFromShape :: ThreadBlockShape -> CUDA.Dim3
+blockDimFromShape threadBlockShape =
+    CUDA.Dim3
+        { dimX = fromIntegral threadBlockShape.blockDimX
+        , dimY = fromIntegral threadBlockShape.blockDimY
+        , dimZ = fromIntegral threadBlockShape.blockDimZ
+        }
+
+gridDimForExtents :: ThreadBlockShape -> [Int] -> Either RuntimeError CUDA.Dim3
+gridDimForExtents threadBlockShape extentValues =
+    case reverse extentValues of
+        [] ->
+            Right CUDA.Dim3{dimX = 1, dimY = 1, dimZ = 1}
+        [xExtent] ->
+            Right
+                CUDA.Dim3
+                    { dimX = gridExtent xExtent threadBlockShape.blockDimX
+                    , dimY = 1
+                    , dimZ = 1
+                    }
+        [xExtent, yExtent] ->
+            Right
+                CUDA.Dim3
+                    { dimX = gridExtent xExtent threadBlockShape.blockDimX
+                    , dimY = gridExtent yExtent threadBlockShape.blockDimY
+                    , dimZ = 1
+                    }
+        [xExtent, yExtent, zExtent] ->
+            Right
+                CUDA.Dim3
+                    { dimX = gridExtent xExtent threadBlockShape.blockDimX
+                    , dimY = gridExtent yExtent threadBlockShape.blockDimY
+                    , dimZ = gridExtent zExtent threadBlockShape.blockDimZ
+                    }
+        _ ->
+            Left $
+                ErrRuntimeCudaUsageError
+                    "CUDA runtime supports at most 3 extent parameters"
+  where
+    gridExtent extentValue blockDim =
+        fromIntegral $
+            max 1 $
+                ceilDiv extentValue blockDim
 
 ceilDiv :: Int -> Int -> Int
 ceilDiv numerator denominator =
@@ -216,17 +318,15 @@ allocationByteCount :: Int -> Int
 allocationByteCount tensorElements =
     max 1 (tensorByteCount tensorElements)
 
-whenNegativeExtent :: Int -> NVIDIA s ()
+whenNegativeExtent :: Int -> Either RuntimeError ()
 whenNegativeExtent extentValue =
-    unless (extentValue >= 0) $
-        throwError $
-            ErrRuntimeNegativeExtent extentValue
+    unlessEither (extentValue >= 0) $
+        ErrRuntimeNegativeExtent extentValue
 
-whenExtentOutOfRange :: Int -> NVIDIA s ()
+whenExtentOutOfRange :: Int -> Either RuntimeError ()
 whenExtentOutOfRange extentValue =
-    unless (extentValue <= fromIntegral (maxBound :: CInt)) $
-        throwError $
-            ErrRuntimeExtentOutOfRange extentValue
+    unlessEither (extentValue <= fromIntegral (maxBound :: CInt)) $
+        ErrRuntimeExtentOutOfRange extentValue
 
 unlessEither :: Bool -> e -> Either e ()
 unlessEither condition err =
@@ -234,5 +334,6 @@ unlessEither condition err =
         then Right ()
         else Left err
 
-zipWithMEither :: (a -> b -> Either e ()) -> [a] -> [b] -> Either e ()
-zipWithMEither = zipWithM_
+zipWithMEither :: (a -> b -> Either e c) -> [a] -> [b] -> Either e [c]
+zipWithMEither func leftValues rightValues =
+    sequence $ zipWith func leftValues rightValues

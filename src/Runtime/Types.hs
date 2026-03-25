@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Runtime.Types (
+    KernelTensorParam (..),
     KernelSignature (..),
+    ThreadBlockShape (..),
     TensorBuffer (..),
     KernelArg (..),
     RuntimeError (..),
@@ -18,9 +20,22 @@ import           Foreign.ForeignPtr    (ForeignPtr, mallocForeignPtrArray,
 import           Foreign.Marshal.Array (peekArray, pokeArray)
 import           Foreign.Ptr           (Ptr)
 
+data KernelTensorParam = KernelTensorParam
+    { tensorParamName :: String
+    , tensorShapeParamNames :: [String]
+    }
+    deriving (Eq, Show)
+
 data KernelSignature = KernelSignature
-    { extentParamName :: String
-    , tensorParamNames :: [String]
+    { extentParamNames :: [String]
+    , tensorParams :: [KernelTensorParam]
+    }
+    deriving (Eq, Show)
+
+data ThreadBlockShape = ThreadBlockShape
+    { blockDimX :: Int
+    , blockDimY :: Int
+    , blockDimZ :: Int
     }
     deriving (Eq, Show)
 

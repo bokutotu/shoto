@@ -7,12 +7,11 @@ import qualified Builder.NVIDIA.Internal.Device as CUDA
 import qualified Builder.NVIDIA.Internal.NVPTX  as NVPTX
 import           Builder.NVIDIA.Types           (CompiledCudaProgram (..))
 import           Builder.Types                  (BuilderError)
-import           Codegen.CUDA.Ast               (CudaDim)
 import           Runtime.Types                  (KernelSignature)
 
 compileCudaProgram ::
-    KernelSignature -> CudaDim -> String -> IO (Either BuilderError CompiledCudaProgram)
-compileCudaProgram kernelSignature compiledCudaDim source = do
+    KernelSignature -> String -> IO (Either BuilderError CompiledCudaProgram)
+compileCudaProgram kernelSignature source = do
     computeCapabilityResult <- CUDA.computeCapability
     case computeCapabilityResult of
         Left err -> pure $ Left err
@@ -24,6 +23,5 @@ compileCudaProgram kernelSignature compiledCudaDim source = do
             compiledPtxResult <- NVPTX.compileProgramToPtx "shoto-runtime.cu" source compiledPtxOptions
             pure $
                 fmap
-                    ( \compiledPtx -> CompiledCudaProgram{compiledPtx, compiledKernelSignature = kernelSignature, compiledCudaDim}
-                    )
+                    (\compiledPtx -> CompiledCudaProgram{compiledPtx, compiledKernelSignature = kernelSignature})
                     compiledPtxResult

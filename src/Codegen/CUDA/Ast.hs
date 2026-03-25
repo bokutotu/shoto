@@ -4,29 +4,28 @@ module Codegen.CUDA.Ast (
     CudaAstError (..),
     CudaKernelName (..),
     CudaTensorName (..),
-    CudaDim (..),
     CudaExpr (..),
     CudaTensorRef (..),
     CudaIndexBinding (..),
     CudaStmt (..),
     CudaProgram (..),
+    renderCudaIndexLinearExpr,
     lowerToCudaProgram,
 ) where
 
-import           Codegen.GenIR    (AstIterVar, ExtentParamName,
-                                   FrontendIterName, GenLoop (..),
-                                   GenProgram (..), GenStmtBinding (..))
+import           Codegen.GenIR    (AstIterVar, ExtentParamName, GenExpr (..),
+                                   GenProgram (..), GenStmt (..),
+                                   GenTensorDecl (..), GenTensorRef (..))
 import qualified Data.Map.Strict  as Map
 import qualified Data.Set         as Set
 import           Data.String      (IsString (fromString))
-import           FrontendIR.Types (Expr (..), IxExpr (..), Stmt (..),
-                                   iterNameToString, tensorNameToString)
+import           FrontendIR.Types (TensorName, tensorNameToString)
 
 data CudaAstError
     = ErrCudaAstReductionNotSupported
-    | ErrCudaAstExpectedSingleStoreIndex Int
-    | ErrCudaAstExpectedSingleLoadIndex Int
-    | ErrCudaAstUnknownIterBinding FrontendIterName
+    | ErrCudaAstRankTooLarge Int
+    | ErrCudaAstTensorShapeMismatch String Int Int
+    | ErrCudaAstMalformedGenProgram
     deriving (Eq, Show)
 
 newtype CudaKernelName = CudaKernelName String deriving (Eq, Ord, Show)
@@ -45,6 +44,7 @@ data CudaDim
 
 data CudaExpr
     = CudaVar AstIterVar
+    | CudaExtentVar ExtentParamName
     | CudaInt Int
     | CudaLoad CudaTensorName [CudaExpr]
     | CudaAdd CudaExpr CudaExpr
@@ -64,9 +64,8 @@ data CudaIndexBinding = CudaIndexBinding
     deriving (Eq, Show)
 
 data CudaStmt
-    = CudaIfLessThan
-        { cudaIfVar :: AstIterVar
-        , cudaIfBound :: ExtentParamName
+    = CudaIfAllLessThan
+        { cudaIfBindings :: [(AstIterVar, ExtentParamName)]
         , cudaIfBody :: [CudaStmt]
         }
     | CudaAssign
@@ -77,32 +76,28 @@ data CudaStmt
 
 data CudaProgram = CudaProgram
     { cudaKernelName :: CudaKernelName
-    , cudaExtentParam :: ExtentParamName
+    , cudaExtentParams :: [ExtentParamName]
     , cudaTensorArgs :: [CudaTensorName]
-    , cudaIndexBinding :: CudaIndexBinding
+    , cudaIndexBindings :: [CudaIndexBinding]
     , cudaBody :: [CudaStmt]
     }
     deriving (Eq, Show)
 
-lowerToCudaProgram :: CudaDim -> GenProgram -> Either CudaAstError CudaProgram
-lowerToCudaProgram dim genProgram = do
-    (target, rhsExpr, tensorArgs) <- lowerAssign genProgram
-    let loopInfo = genProgram.loop
-        indexVar = loopInfo.astIterator
+lowerToCudaProgram :: GenProgram -> Either CudaAstError CudaProgram
+lowerToCudaProgram genProgram = do
+    validateRank genProgram
+    stmt <- extractKernelStmt genProgram.genBody
+    (target, rhsExpr, tensorArgs, logicalIndices) <-
+        lowerKernelStmt tensorShapes genProgram.genExtentParams stmt
     pure
         CudaProgram
             { cudaKernelName = fromString "shoto_kernel_cuda"
-            , cudaExtentParam = loopInfo.extentParam
+            , cudaExtentParams = genProgram.genExtentParams
             , cudaTensorArgs = tensorArgs
-            , cudaIndexBinding =
-                CudaIndexBinding
-                    { cudaIndexVar = indexVar
-                    , cudaIndexDim = dim
-                    }
+            , cudaIndexBindings = buildIndexBindings logicalIndices
             , cudaBody =
-                [ CudaIfLessThan
-                    { cudaIfVar = indexVar
-                    , cudaIfBound = loopInfo.extentParam
+                [ CudaIfAllLessThan
+                    { cudaIfBindings = zip logicalIndices genProgram.genExtentParams
                     , cudaIfBody =
                         [ CudaAssign
                             { cudaAssignTarget = target
@@ -112,66 +107,147 @@ lowerToCudaProgram dim genProgram = do
                     }
                 ]
             }
+  where
+    tensorShapes = buildTensorShapeMap genProgram.genTensorDecls
 
-lowerAssign :: GenProgram -> Either CudaAstError (CudaTensorRef, CudaExpr, [CudaTensorName])
-lowerAssign genProgram =
-    case genProgram.stmtBinding.frontendStmt of
-        Reduction{} -> Left ErrCudaAstReductionNotSupported
-        Assign{} -> do
-            let iterMap =
-                    Map.singleton
-                        genProgram.loop.frontendIter
-                        genProgram.stmtBinding.astIndexVar
-            storeIndices <- traverse (lowerIxExpr iterMap) genProgram.stmtBinding.frontendStmt.outputIndex
-            case storeIndices of
-                [singleStoreIndex] -> do
-                    rhsExpr <- lowerExpr iterMap genProgram.stmtBinding.frontendStmt.rhs
+extractKernelStmt :: [GenStmt] -> Either CudaAstError GenStmt
+extractKernelStmt stmts =
+    case stmts of
+        [GenFor{genBody = body}] -> extractKernelStmt body
+        [stmt] -> pure stmt
+        _ -> Left ErrCudaAstMalformedGenProgram
+
+lowerKernelStmt ::
+    Map.Map TensorName [ExtentParamName] ->
+    [ExtentParamName] ->
+    GenStmt ->
+    Either CudaAstError (CudaTensorRef, CudaExpr, [CudaTensorName], [AstIterVar])
+lowerKernelStmt tensorShapes extentParams stmt =
+    case stmt of
+        GenAssign{} -> do
+            if length stmt.genTarget.genIndices /= length extentParams
+                then Left ErrCudaAstMalformedGenProgram
+                else do
+                    storeRef <- lowerTensorRef tensorShapes stmt.genTarget
+                    rhsExpr <- lowerExpr tensorShapes stmt.genExpr
                     let outputTensorName =
                             fromString $
-                                tensorNameToString genProgram.stmtBinding.frontendStmt.outputTensor
+                                tensorNameToString stmt.genTarget.genTensor
                         tensorArgs =
                             uniqueStable
                                 ( outputTensorName
-                                    : collectLoadTensors genProgram.stmtBinding.frontendStmt.rhs
+                                    : collectLoadTensors stmt.genExpr
                                 )
-                    pure
-                        ( CudaTensorRef
-                            { tensorName = outputTensorName
-                            , tensorIndices = [singleStoreIndex]
-                            }
-                        , rhsExpr
-                        , tensorArgs
-                        )
-                _ -> Left $ ErrCudaAstExpectedSingleStoreIndex (length storeIndices)
+                    pure (storeRef, rhsExpr, tensorArgs, stmt.genTarget.genIndices)
+        GenReduction{} -> Left ErrCudaAstReductionNotSupported
+        GenFor{} -> Left ErrCudaAstMalformedGenProgram
 
-lowerExpr :: Map.Map FrontendIterName AstIterVar -> Expr -> Either CudaAstError CudaExpr
-lowerExpr iterMap expr =
-    case expr of
-        EConst value -> pure $ CudaInt value
-        ELoad tensor indices -> do
-            loweredIndices <- traverse (lowerIxExpr iterMap) indices
-            case loweredIndices of
-                [_] -> pure $ CudaLoad (fromString $ tensorNameToString tensor) loweredIndices
-                _ -> Left $ ErrCudaAstExpectedSingleLoadIndex (length loweredIndices)
-        EAdd lhs rhs -> CudaAdd <$> lowerExpr iterMap lhs <*> lowerExpr iterMap rhs
-        EMul lhs rhs -> CudaMul <$> lowerExpr iterMap lhs <*> lowerExpr iterMap rhs
-
-lowerIxExpr :: Map.Map FrontendIterName AstIterVar -> IxExpr -> Either CudaAstError CudaExpr
-lowerIxExpr iterMap ixExpr =
-    case ixExpr of
-        IxVar iterName ->
-            let iterKey = fromString $ iterNameToString iterName
-             in case Map.lookup iterKey iterMap of
-                    Just loweredName -> pure $ CudaVar loweredName
-                    Nothing -> Left $ ErrCudaAstUnknownIterBinding iterKey
-
-collectLoadTensors :: Expr -> [CudaTensorName]
+collectLoadTensors :: GenExpr -> [CudaTensorName]
 collectLoadTensors expr =
     case expr of
-        EConst _ -> []
-        ELoad tensor _ -> [fromString $ tensorNameToString tensor]
-        EAdd lhs rhs -> collectLoadTensors lhs <> collectLoadTensors rhs
-        EMul lhs rhs -> collectLoadTensors lhs <> collectLoadTensors rhs
+        GenConst _ -> []
+        GenLoad ref -> [fromString $ tensorNameToString ref.genTensor]
+        GenAdd lhs rhs -> collectLoadTensors lhs <> collectLoadTensors rhs
+        GenMul lhs rhs -> collectLoadTensors lhs <> collectLoadTensors rhs
+
+lowerExpr ::
+    Map.Map TensorName [ExtentParamName] ->
+    GenExpr ->
+    Either CudaAstError CudaExpr
+lowerExpr tensorShapes expr =
+    case expr of
+        GenConst value -> pure $ CudaInt value
+        GenLoad ref -> lowerTensorLoad tensorShapes ref
+        GenAdd lhs rhs -> CudaAdd <$> lowerExpr tensorShapes lhs <*> lowerExpr tensorShapes rhs
+        GenMul lhs rhs -> CudaMul <$> lowerExpr tensorShapes lhs <*> lowerExpr tensorShapes rhs
+
+lowerTensorLoad ::
+    Map.Map TensorName [ExtentParamName] ->
+    GenTensorRef ->
+    Either CudaAstError CudaExpr
+lowerTensorLoad tensorShapes ref = do
+    tensorRef <- lowerTensorRef tensorShapes ref
+    pure $ CudaLoad tensorRef.tensorName tensorRef.tensorIndices
+
+lowerTensorRef ::
+    Map.Map TensorName [ExtentParamName] ->
+    GenTensorRef ->
+    Either CudaAstError CudaTensorRef
+lowerTensorRef tensorShapes ref = do
+    shapeParams <- expectTensorShape tensorShapes ref.genTensor
+    linearIndex <-
+        linearizeRowMajor (tensorNameToString ref.genTensor) shapeParams (CudaVar <$> ref.genIndices)
+    pure
+        CudaTensorRef
+            { tensorName = fromString $ tensorNameToString ref.genTensor
+            , tensorIndices = [linearIndex]
+            }
+
+linearizeRowMajor ::
+    String ->
+    [ExtentParamName] ->
+    [CudaExpr] ->
+    Either CudaAstError CudaExpr
+linearizeRowMajor tensorName shapeParams indices
+    | length shapeParams /= length indices =
+        Left $
+            ErrCudaAstTensorShapeMismatch
+                tensorName
+                (length shapeParams)
+                (length indices)
+    | null indices = pure $ CudaInt 0
+    | otherwise =
+        case (indices, shapeParams) of
+            (firstIndex : restIndices, _ : restShapeParams) ->
+                pure $
+                    foldl'
+                        step
+                        firstIndex
+                        (zip restIndices restShapeParams)
+            _ -> pure $ CudaInt 0
+  where
+    step acc (indexExpr, extentParam) =
+        CudaAdd
+            (CudaMul acc (CudaExtentVar extentParam))
+            indexExpr
+
+expectTensorShape ::
+    Map.Map TensorName [ExtentParamName] ->
+    TensorName ->
+    Either CudaAstError [ExtentParamName]
+expectTensorShape tensorShapes tensor =
+    case Map.lookup tensor tensorShapes of
+        Just shape -> pure shape
+        Nothing ->
+            Left $
+                ErrCudaAstTensorShapeMismatch
+                    (tensorNameToString tensor)
+                    0
+                    0
+
+buildTensorShapeMap :: [GenTensorDecl] -> Map.Map TensorName [ExtentParamName]
+buildTensorShapeMap tensorDecls =
+    Map.fromList
+        [ (tensorDecl.genTensor, tensorDecl.genShape)
+        | tensorDecl <- tensorDecls
+        ]
+
+buildIndexBindings :: [AstIterVar] -> [CudaIndexBinding]
+buildIndexBindings logicalIndices =
+    [ CudaIndexBinding
+        { cudaIndexVar = astIter
+        , cudaIndexDim = dim
+        }
+    | (astIter, dim) <- zip (reverse logicalIndices) [CudaX, CudaY, CudaZ]
+    ]
+
+validateRank :: GenProgram -> Either CudaAstError ()
+validateRank genProgram =
+    if rank <= 3
+        then pure ()
+        else Left $ ErrCudaAstRankTooLarge rank
+  where
+    rank = length genProgram.genExtentParams
 
 uniqueStable :: (Ord a) => [a] -> [a]
 uniqueStable = go Set.empty
@@ -180,3 +256,10 @@ uniqueStable = go Set.empty
     go seen (x : xs)
         | x `Set.member` seen = go seen xs
         | otherwise = x : go (Set.insert x seen) xs
+
+renderCudaIndexLinearExpr :: CudaIndexBinding -> String
+renderCudaIndexLinearExpr CudaIndexBinding{cudaIndexDim = dim} =
+    case dim of
+        CudaX -> "blockIdx.x * blockDim.x + threadIdx.x"
+        CudaY -> "blockIdx.y * blockDim.y + threadIdx.y"
+        CudaZ -> "blockIdx.z * blockDim.z + threadIdx.z"

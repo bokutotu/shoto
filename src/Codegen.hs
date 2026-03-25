@@ -1,14 +1,12 @@
 module Codegen (
     CodegenError (..),
-    CudaDim (..),
     generateC,
     generateCuda,
 ) where
 
 import           Codegen.C.Ast       (CAstError, lowerToCProgram)
 import           Codegen.C.Emit      (emitCProgram)
-import           Codegen.CUDA.Ast    (CudaAstError, CudaDim (..),
-                                      lowerToCudaProgram)
+import           Codegen.CUDA.Ast    (CudaAstError, lowerToCudaProgram)
 import           Codegen.CUDA.Emit   (emitCudaProgram)
 import           Codegen.GenIR       (GenIRError, buildGenProgram)
 import           Data.Bifunctor      (first)
@@ -27,8 +25,8 @@ generateC ast program = do
     cProgram <- first CodegenCAstError $ lowerToCProgram genProgram
     pure $ emitCProgram cProgram
 
-generateCuda :: CudaDim -> AstTree -> Program -> Either CodegenError String
-generateCuda dim ast program = do
+generateCuda :: AstTree -> Program -> Either CodegenError String
+generateCuda ast program = do
     genProgram <- first CodegenGenIRError $ buildGenProgram ast program
-    cudaProgram <- first CodegenCudaAstError $ lowerToCudaProgram dim genProgram
+    cudaProgram <- first CodegenCudaAstError $ lowerToCudaProgram genProgram
     pure $ emitCudaProgram cudaProgram

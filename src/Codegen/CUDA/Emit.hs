@@ -12,8 +12,8 @@ emitCudaProgram :: CudaProgram -> String
 emitCudaProgram cudaProgram =
     unlines
         ( [ headerLine
-          , indentLine 1 indexLine
           ]
+            <> concatMap renderCudaIndexBinding cudaProgram.cudaIndexBindings
             <> concatMap (renderCudaStmt 1) cudaProgram.cudaBody
             <> ["}"]
         )
@@ -23,50 +23,53 @@ emitCudaProgram cudaProgram =
          in "extern \"C\" __global__ void "
                 <> kernelName
                 <> "("
-                <> renderParams cudaProgram.cudaExtentParam cudaProgram.cudaTensorArgs
+                <> renderParams cudaProgram.cudaExtentParams cudaProgram.cudaTensorArgs
                 <> ") {"
-    indexLine =
-        let AstIterVar cudaIndexVar = cudaProgram.cudaIndexBinding.cudaIndexVar
-         in "int "
-                <> cudaIndexVar
-                <> " = "
-                <> renderCudaLinearIndex cudaProgram.cudaIndexBinding.cudaIndexDim
-                <> ";"
 
-renderParams :: ExtentParamName -> [CudaTensorName] -> String
-renderParams (ExtentParamName extentParam) tensorArgs =
+renderParams :: [ExtentParamName] -> [CudaTensorName] -> String
+renderParams extentParams tensorArgs =
     intercalate ", " $
-        ("int " <> extentParam)
-            : fmap renderTensorArg tensorArgs
+        fmap renderExtentParam extentParams
+            <> fmap renderTensorArg tensorArgs
   where
+    renderExtentParam (ExtentParamName extentParam) = "int " <> extentParam
     renderTensorArg (CudaTensorName tensorName) = "float* " <> tensorName
 
-renderCudaLinearIndex :: CudaDim -> String
-renderCudaLinearIndex dim =
-    let axis =
-            case dim of
-                CudaX -> "x"
-                CudaY -> "y"
-                CudaZ -> "z"
-     in "blockIdx." <> axis <> " * blockDim." <> axis <> " + threadIdx." <> axis
+renderCudaIndexBinding :: CudaIndexBinding -> [String]
+renderCudaIndexBinding binding =
+    let AstIterVar cudaIndexVar = binding.cudaIndexVar
+     in [ indentLine 1 $
+            "int "
+                <> cudaIndexVar
+                <> " = "
+                <> renderCudaIndexLinearExpr binding
+                <> ";"
+        ]
 
 renderCudaStmt :: Int -> CudaStmt -> [String]
 renderCudaStmt indent stmt =
     case stmt of
-        CudaIfLessThan{cudaIfVar = varName, cudaIfBound = upperBound, cudaIfBody = body} ->
-            let AstIterVar cudaIfVar = varName
-                ExtentParamName cudaIfBound = upperBound
-             in [ indentLine indent $
-                    "if ("
-                        <> cudaIfVar
-                        <> " < "
-                        <> cudaIfBound
-                        <> ") {"
-                ]
-                    <> concatMap (renderCudaStmt (indent + 1)) body
-                    <> [indentLine indent "}"]
+        CudaIfAllLessThan{cudaIfBindings = bindings, cudaIfBody = body} ->
+            [ indentLine indent $
+                "if ("
+                    <> renderGuard bindings
+                    <> ") {"
+            ]
+                <> concatMap (renderCudaStmt (indent + 1)) body
+                <> [indentLine indent "}"]
         CudaAssign{cudaAssignTarget = target, cudaAssignExpr = expr} ->
             [indentLine indent $ renderTensorRef target <> " = " <> renderCudaExpr expr <> ";"]
+  where
+    renderGuard [binding] = renderAtomicCondition binding
+    renderGuard guardBindings = intercalate " && " (renderGroupedCondition <$> guardBindings)
+
+    renderAtomicCondition (varName, boundName) =
+        let AstIterVar varText = varName
+            ExtentParamName boundText = boundName
+         in varText <> " < " <> boundText
+
+    renderGroupedCondition binding =
+        "(" <> renderAtomicCondition binding <> ")"
 
 renderTensorRef :: CudaTensorRef -> String
 renderTensorRef ref =
@@ -78,6 +81,7 @@ renderCudaExpr :: CudaExpr -> String
 renderCudaExpr expr =
     case expr of
         CudaVar (AstIterVar varName) -> varName
+        CudaExtentVar (ExtentParamName extentParam) -> extentParam
         CudaInt value -> show value
         CudaLoad tensorName indices ->
             let CudaTensorName tensorNameText = tensorName

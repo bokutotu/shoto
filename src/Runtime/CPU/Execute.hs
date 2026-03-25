@@ -9,12 +9,14 @@ module Runtime.CPU.Execute (
 import           Builder.CPU.Types          (CompiledSharedObject (..))
 import           Control.Exception          (IOException, bracket, catch)
 import           Control.Monad              (when)
+import qualified Data.Map.Strict            as Map
 import           Foreign.C.Types            (CInt (..))
 import           Foreign.Marshal.Array      (withArray)
 import           Foreign.Marshal.Utils      (with)
 import           Foreign.Ptr                (FunPtr, Ptr, castPtr)
 import           Runtime.Types              (KernelArg (..),
                                              KernelSignature (..),
+                                             KernelTensorParam (..),
                                              RuntimeError (..),
                                              TensorBuffer (..),
                                              withTensorBufferPtr)
@@ -89,39 +91,59 @@ runCPUKernel loadedKernel kernelArgs =
 
 validateKernelArgs :: KernelSignature -> [KernelArg] -> Either RuntimeError ()
 validateKernelArgs kernelSignature kernelArgs = do
-    let expectedArgCount = 1 + length kernelSignature.tensorParamNames
+    let extentCount = length kernelSignature.extentParamNames
+        expectedArgCount = extentCount + length kernelSignature.tensorParams
         actualArgCount = length kernelArgs
     when (actualArgCount /= expectedArgCount) $
         Left $
             ErrRuntimeArgCountMismatch expectedArgCount actualArgCount
 
-    extentValue <-
-        case kernelArgs of
-            KernelArgInt extentValue : _ -> Right extentValue
-            _ -> Left ErrRuntimeExpectedExtentArg
+    let (extentArgs, tensorArgs) = splitAt extentCount kernelArgs
+    extentValues <- traverse expectExtentArg extentArgs
+    mapM_ validateExtentValue extentValues
+    let extentMap =
+            Map.fromList $
+                zip kernelSignature.extentParamNames extentValues
 
-    when (extentValue < 0) $
-        Left $
-            ErrRuntimeNegativeExtent extentValue
+    zipWithM_
+        (\argIndex (tensorParam, tensorArg) -> validateTensorArg extentMap argIndex tensorParam tensorArg)
+        [1 :: Int ..]
+        (zip kernelSignature.tensorParams tensorArgs)
+  where
+    expectExtentArg = \case
+        KernelArgInt extentValue -> Right extentValue
+        _ -> Left ErrRuntimeExpectedExtentArg
 
-    when (extentValue > fromIntegral (maxBound :: CInt)) $
-        Left $
-            ErrRuntimeExtentOutOfRange extentValue
+    validateExtentValue extentValue = do
+        when (extentValue < 0) $
+            Left $
+                ErrRuntimeNegativeExtent extentValue
+        when (extentValue > fromIntegral (maxBound :: CInt)) $
+            Left $
+                ErrRuntimeExtentOutOfRange extentValue
 
-    let tensorArgs = drop 1 kernelArgs
-    zipWithM_ (validateTensorArg extentValue) [1 ..] tensorArgs
-
-validateTensorArg :: Int -> Int -> KernelArg -> Either RuntimeError ()
-validateTensorArg extentValue argIndex = \case
+validateTensorArg ::
+    Map.Map String Int ->
+    Int ->
+    KernelTensorParam ->
+    KernelArg ->
+    Either RuntimeError ()
+validateTensorArg extentMap argIndex tensorParam = \case
     KernelArgInt _ -> Left $ ErrRuntimeExpectedTensorArg argIndex
     KernelArgTensor tensorBuffer
-        | tensorBuffer.tensorElements < extentValue ->
+        | tensorBuffer.tensorElements < requiredElements ->
             Left $
                 ErrRuntimeTensorTooSmall
                     argIndex
-                    extentValue
+                    requiredElements
                     tensorBuffer.tensorElements
         | otherwise -> Right ()
+      where
+        requiredElements =
+            product $
+                fmap
+                    (\shapeParamName -> Map.findWithDefault 1 shapeParamName extentMap)
+                    tensorParam.tensorShapeParamNames
 
 withKernelArgPointers :: [KernelArg] -> ([Ptr ()] -> IO a) -> IO a
 withKernelArgPointers kernelArgs continue =

@@ -22,15 +22,15 @@ emitCProgram cProgram =
          in "void "
                 <> functionName
                 <> "("
-                <> renderParams cProgram.cExtentParam cProgram.cTensorArgs
+                <> renderParams cProgram.cExtentParams cProgram.cTensorArgs
                 <> ") {"
 
-renderParams :: ExtentParamName -> [CTensorName] -> String
-renderParams (ExtentParamName extentParam) tensorArgs =
+renderParams :: [ExtentParamName] -> [CTensorName] -> String
+renderParams extentParams tensorArgs =
     intercalate ", " $
-        ("int " <> extentParam)
-            : fmap renderTensorArg tensorArgs
+        fmap renderExtentParam extentParams <> fmap renderTensorArg tensorArgs
   where
+    renderExtentParam (ExtentParamName extentParam) = "int " <> extentParam
     renderTensorArg (CTensorName tensorName) = "float* " <> tensorName
 
 renderCStmt :: Int -> CStmt -> [String]
