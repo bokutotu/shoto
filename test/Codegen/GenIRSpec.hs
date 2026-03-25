@@ -4,12 +4,12 @@ module Codegen.GenIRSpec (spec) where
 
 import           Codegen.GenIR       (GenExpr (..), GenIRError (..),
                                       GenProgram (..), GenStmt (..),
-                                      GenTensorDecl (..), GenTensorRef (..),
                                       buildGenProgram)
 import qualified Data.List.NonEmpty  as NE
 import           FrontendIR          (Axis (..), Expr (..), IxExpr (..),
                                       Program (..), ReductionOp (..), Stmt (..),
                                       TensorDecl (..))
+import           IR.Tensor           (TensorRef (..))
 import           Polyhedral.Internal (AstExpression (..), AstOp (..),
                                       AstTree (..))
 import           Test.Hspec
@@ -23,8 +23,8 @@ spec = do
                     GenProgram
                         { genExtentParams = ["N", "M"]
                         , genTensorDecls =
-                            [ GenTensorDecl{genTensor = "A", genShape = ["N", "M"]}
-                            , GenTensorDecl{genTensor = "B", genShape = ["N", "M"]}
+                            [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                            , TensorDecl{tensor = "B", shape = ["N", "M"]}
                             ]
                         , genBody =
                             [ GenFor
@@ -37,15 +37,15 @@ spec = do
                                         , genBody =
                                             [ GenAssign
                                                 { genTarget =
-                                                    GenTensorRef
-                                                        { genTensor = "A"
-                                                        , genIndices = ["c0", "c1"]
+                                                    TensorRef
+                                                        { tensorName = "A"
+                                                        , tensorIndices = ["c0", "c1"]
                                                         }
                                                 , genExpr =
                                                     GenLoad
-                                                        GenTensorRef
-                                                            { genTensor = "B"
-                                                            , genIndices = ["c0", "c1"]
+                                                        TensorRef
+                                                            { tensorName = "B"
+                                                            , tensorIndices = ["c0", "c1"]
                                                             }
                                                 }
                                             ]
@@ -77,8 +77,8 @@ spec = do
                     GenProgram
                         { genExtentParams = ["N", "M"]
                         , genTensorDecls =
-                            [ GenTensorDecl{genTensor = "A", genShape = ["N", "M"]}
-                            , GenTensorDecl{genTensor = "B", genShape = ["N", "M"]}
+                            [ TensorDecl{tensor = "A", shape = ["N", "M"]}
+                            , TensorDecl{tensor = "B", shape = ["N", "M"]}
                             ]
                         , genBody =
                             [ GenFor
@@ -91,15 +91,15 @@ spec = do
                                         , genBody =
                                             [ GenAssign
                                                 { genTarget =
-                                                    GenTensorRef
-                                                        { genTensor = "A"
-                                                        , genIndices = ["c1", "c0"]
+                                                    TensorRef
+                                                        { tensorName = "A"
+                                                        , tensorIndices = ["c1", "c0"]
                                                         }
                                                 , genExpr =
                                                     GenLoad
-                                                        GenTensorRef
-                                                            { genTensor = "B"
-                                                            , genIndices = ["c1", "c0"]
+                                                        TensorRef
+                                                            { tensorName = "B"
+                                                            , tensorIndices = ["c1", "c0"]
                                                             }
                                                 }
                                             ]
@@ -124,8 +124,8 @@ spec = do
                     GenProgram
                         { genExtentParams = ["N"]
                         , genTensorDecls =
-                            [ GenTensorDecl{genTensor = "A", genShape = ["N"]}
-                            , GenTensorDecl{genTensor = "B", genShape = ["N"]}
+                            [ TensorDecl{tensor = "A", shape = ["N"]}
+                            , TensorDecl{tensor = "B", shape = ["N"]}
                             ]
                         , genBody =
                             [ GenFor
@@ -134,15 +134,15 @@ spec = do
                                 , genBody =
                                     [ GenAssign
                                         { genTarget =
-                                            GenTensorRef
-                                                { genTensor = "A"
-                                                , genIndices = ["c0"]
+                                            TensorRef
+                                                { tensorName = "A"
+                                                , tensorIndices = ["c0"]
                                                 }
                                         , genExpr =
                                             GenLoad
-                                                GenTensorRef
-                                                    { genTensor = "B"
-                                                    , genIndices = ["c0"]
+                                                TensorRef
+                                                    { tensorName = "B"
+                                                    , tensorIndices = ["c0"]
                                                     }
                                         }
                                     ]
@@ -156,8 +156,8 @@ spec = do
                     GenProgram
                         { genExtentParams = ["N", "M"]
                         , genTensorDecls =
-                            [ GenTensorDecl{genTensor = "A", genShape = ["N"]}
-                            , GenTensorDecl{genTensor = "B", genShape = ["N", "M"]}
+                            [ TensorDecl{tensor = "A", shape = ["N"]}
+                            , TensorDecl{tensor = "B", shape = ["N", "M"]}
                             ]
                         , genBody =
                             [ GenFor
@@ -171,15 +171,15 @@ spec = do
                                             [ GenReduction
                                                 { genReductionOp = ReduceAdd
                                                 , genTarget =
-                                                    GenTensorRef
-                                                        { genTensor = "A"
-                                                        , genIndices = ["c0"]
+                                                    TensorRef
+                                                        { tensorName = "A"
+                                                        , tensorIndices = ["c0"]
                                                         }
                                                 , genExpr =
                                                     GenLoad
-                                                        GenTensorRef
-                                                            { genTensor = "B"
-                                                            , genIndices = ["c0", "c1"]
+                                                        TensorRef
+                                                            { tensorName = "B"
+                                                            , tensorIndices = ["c0", "c1"]
                                                             }
                                                 }
                                             ]

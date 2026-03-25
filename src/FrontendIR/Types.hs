@@ -16,38 +16,14 @@ module FrontendIR.Types (
 ) where
 
 import           Data.List.NonEmpty (NonEmpty)
-import           Data.String        (IsString (fromString))
-
-newtype IterName = IterName String deriving (Eq, Ord, Show)
-
-newtype ParamName = ParamName String deriving (Eq, Ord, Show)
-
-newtype TensorName = TensorName String deriving (Eq, Ord, Show)
-
-instance IsString IterName where fromString = IterName
-
-instance IsString ParamName where fromString = ParamName
-
-instance IsString TensorName where fromString = TensorName
-
-iterNameToString :: IterName -> String
-iterNameToString (IterName name) = name
-
-paramNameToString :: ParamName -> String
-paramNameToString (ParamName name) = name
-
-tensorNameToString :: TensorName -> String
-tensorNameToString (TensorName name) = name
+import           IR.Name            (IterName, ParamName, TensorName,
+                                     iterNameToString, paramNameToString,
+                                     tensorNameToString)
+import           IR.Tensor          (TensorDecl (..))
 
 data Axis = Axis
     { iter :: IterName
     , extent :: ParamName
-    }
-    deriving (Eq, Show)
-
-data TensorDecl = TensorDecl
-    { tensor :: TensorName
-    , shape :: [ParamName]
     }
     deriving (Eq, Show)
 

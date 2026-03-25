@@ -11,11 +11,7 @@ module FrontendIR.Lowering.PolyhedralIR (
 
 import qualified Data.Map.Strict  as Map
 import           FrontendIR.Types (IterName, ParamName, TensorName)
-
-newtype StmtName = StmtName String deriving (Eq, Ord, Show)
-
-stmtNameToString :: StmtName -> String
-stmtNameToString (StmtName s) = s
+import           IR.Name          (StmtName (..), stmtNameToString)
 
 data ScheduleAxis
     = PadAxis Int

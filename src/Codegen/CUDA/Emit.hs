@@ -5,8 +5,11 @@ module Codegen.CUDA.Emit (
 ) where
 
 import           Codegen.CUDA.Ast
-import           Codegen.GenIR    (AstIterVar (..), ExtentParamName (..))
 import           Data.List        (intercalate)
+import           IR.Name          (ParamName, TensorName, iterNameToString,
+                                   kernelNameToString, paramNameToString,
+                                   tensorNameToString)
+import           IR.Tensor        (TensorRef (..))
 
 emitCudaProgram :: CudaProgram -> String
 emitCudaProgram cudaProgram =
@@ -19,32 +22,30 @@ emitCudaProgram cudaProgram =
         )
   where
     headerLine =
-        let CudaKernelName kernelName = cudaProgram.cudaKernelName
-         in "extern \"C\" __global__ void "
-                <> kernelName
-                <> "("
-                <> renderParams cudaProgram.cudaExtentParams cudaProgram.cudaTensorArgs
-                <> ") {"
+        "extern \"C\" __global__ void "
+            <> kernelNameToString cudaProgram.cudaKernelName
+            <> "("
+            <> renderParams cudaProgram.cudaExtentParams cudaProgram.cudaTensorArgs
+            <> ") {"
 
-renderParams :: [ExtentParamName] -> [CudaTensorName] -> String
+renderParams :: [ParamName] -> [TensorName] -> String
 renderParams extentParams tensorArgs =
     intercalate ", " $
         fmap renderExtentParam extentParams
             <> fmap renderTensorArg tensorArgs
   where
-    renderExtentParam (ExtentParamName extentParam) = "int " <> extentParam
-    renderTensorArg (CudaTensorName tensorName) = "float* " <> tensorName
+    renderExtentParam extentParam = "int " <> paramNameToString extentParam
+    renderTensorArg tensorName = "float* " <> tensorNameToString tensorName
 
 renderCudaIndexBinding :: CudaIndexBinding -> [String]
 renderCudaIndexBinding binding =
-    let AstIterVar cudaIndexVar = binding.cudaIndexVar
-     in [ indentLine 1 $
-            "int "
-                <> cudaIndexVar
-                <> " = "
-                <> renderCudaIndexLinearExpr binding
-                <> ";"
-        ]
+    [ indentLine 1 $
+        "int "
+            <> iterNameToString binding.cudaIndexVar
+            <> " = "
+            <> renderCudaIndexLinearExpr binding
+            <> ";"
+    ]
 
 renderCudaStmt :: Int -> CudaStmt -> [String]
 renderCudaStmt indent stmt =
@@ -64,29 +65,25 @@ renderCudaStmt indent stmt =
     renderGuard guardBindings = intercalate " && " (renderGroupedCondition <$> guardBindings)
 
     renderAtomicCondition (varName, boundName) =
-        let AstIterVar varText = varName
-            ExtentParamName boundText = boundName
-         in varText <> " < " <> boundText
+        iterNameToString varName <> " < " <> paramNameToString boundName
 
     renderGroupedCondition binding =
         "(" <> renderAtomicCondition binding <> ")"
 
-renderTensorRef :: CudaTensorRef -> String
+renderTensorRef :: TensorRef CudaExpr -> String
 renderTensorRef ref =
-    let CudaTensorName tensorName = ref.tensorName
-     in tensorName
-            <> concatMap (\idx -> "[" <> renderCudaExpr idx <> "]") ref.tensorIndices
+    tensorNameToString ref.tensorName
+        <> concatMap (\idx -> "[" <> renderCudaExpr idx <> "]") ref.tensorIndices
 
 renderCudaExpr :: CudaExpr -> String
 renderCudaExpr expr =
     case expr of
-        CudaVar (AstIterVar varName) -> varName
-        CudaExtentVar (ExtentParamName extentParam) -> extentParam
+        CudaVar varName -> iterNameToString varName
+        CudaExtentVar extentParam -> paramNameToString extentParam
         CudaInt value -> show value
         CudaLoad tensorName indices ->
-            let CudaTensorName tensorNameText = tensorName
-             in tensorNameText
-                    <> concatMap (\idx -> "[" <> renderCudaExpr idx <> "]") indices
+            tensorNameToString tensorName
+                <> concatMap (\idx -> "[" <> renderCudaExpr idx <> "]") indices
         CudaAdd lhs rhs -> "(" <> renderCudaExpr lhs <> " + " <> renderCudaExpr rhs <> ")"
         CudaMul lhs rhs -> "(" <> renderCudaExpr lhs <> " * " <> renderCudaExpr rhs <> ")"
 

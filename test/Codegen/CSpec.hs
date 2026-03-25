@@ -3,10 +3,10 @@
 module Codegen.CSpec (spec) where
 
 import           Codegen             (generateC)
-import           Codegen.C.Ast       (CFunctionName (..), CTensorName (..))
 import qualified Data.List.NonEmpty  as NE
 import           FrontendIR          (Axis (..), Expr (..), IxExpr (..),
                                       Program (..), Stmt (..), TensorDecl (..))
+import           IR.Name             (KernelName (..), TensorName (..))
 import           Polyhedral.Internal (AstExpression (..), AstOp (..),
                                       AstTree (..))
 import           Test.Hspec
@@ -54,9 +54,9 @@ spec = do
 
             generateC interchanged2DAst simpleCopy2DProgram `shouldBe` Right expected
 
-        it "constructs generated C name wrappers from string literals" $ do
-            ("shoto_kernel" :: CFunctionName) `shouldBe` CFunctionName "shoto_kernel"
-            ("A" :: CTensorName) `shouldBe` CTensorName "A"
+        it "constructs shared IR names from string literals" $ do
+            ("shoto_kernel" :: KernelName) `shouldBe` KernelName "shoto_kernel"
+            ("A" :: TensorName) `shouldBe` TensorName "A"
 
 simpleCopy2DAst :: AstTree
 simpleCopy2DAst =

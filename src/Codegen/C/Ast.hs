@@ -2,22 +2,18 @@
 
 module Codegen.C.Ast (
     CAstError (..),
-    CFunctionName (..),
-    CTensorName (..),
     CExpr (..),
-    CTensorRef (..),
     CStmt (..),
     CProgram (..),
     lowerToCProgram,
 ) where
 
-import           Codegen.GenIR    (AstIterVar, ExtentParamName (..),
-                                   GenExpr (..), GenProgram (..), GenStmt (..),
-                                   GenTensorDecl (..), GenTensorRef (..))
+import           Codegen.GenIR    (GenExpr (..), GenProgram (..), GenStmt (..))
 import qualified Data.Map.Strict  as Map
 import qualified Data.Set         as Set
-import           Data.String      (IsString (fromString))
-import           FrontendIR.Types (TensorName, tensorNameToString)
+import           FrontendIR.Types (IterName, ParamName, TensorName)
+import           IR.Name          (KernelName (..))
+import           IR.Tensor        (TensorDecl (..), TensorRef (..))
 
 data CAstError
     = ErrCAstReductionNotSupported
@@ -25,44 +21,31 @@ data CAstError
     | ErrCAstTensorRankMismatch TensorName Int Int
     deriving (Eq, Show)
 
-newtype CFunctionName = CFunctionName String deriving (Eq, Ord, Show)
-
-instance IsString CFunctionName where fromString = CFunctionName
-
-newtype CTensorName = CTensorName String deriving (Eq, Ord, Show)
-
-instance IsString CTensorName where fromString = CTensorName
-
 data CExpr
-    = CVar AstIterVar
+    = CVar IterName
+    | CExtentVar ParamName
     | CInt Int
-    | CLoad CTensorName [CExpr]
+    | CLoad TensorName [CExpr]
     | CAdd CExpr CExpr
     | CMul CExpr CExpr
     deriving (Eq, Show)
 
-data CTensorRef = CTensorRef
-    { tensorName :: CTensorName
-    , tensorIndices :: [CExpr]
-    }
-    deriving (Eq, Show)
-
 data CStmt
     = CForLoop
-        { cForVar :: AstIterVar
-        , cForUpperBound :: ExtentParamName
+        { cForVar :: IterName
+        , cForUpperBound :: ParamName
         , cForBody :: [CStmt]
         }
     | CAssign
-        { cAssignTarget :: CTensorRef
+        { cAssignTarget :: TensorRef CExpr
         , cAssignExpr :: CExpr
         }
     deriving (Eq, Show)
 
 data CProgram = CProgram
-    { cFunctionName :: CFunctionName
-    , cExtentParams :: [ExtentParamName]
-    , cTensorArgs :: [CTensorName]
+    { cFunctionName :: KernelName
+    , cExtentParams :: [ParamName]
+    , cTensorArgs :: [TensorName]
     , cBody :: [CStmt]
     }
     deriving (Eq, Show)
@@ -72,7 +55,7 @@ lowerToCProgram genProgram = do
     cBody <- lowerStmts tensorShapes genProgram.genBody
     pure
         CProgram
-            { cFunctionName = fromString "shoto_kernel"
+            { cFunctionName = KernelName "shoto_kernel"
             , cExtentParams = genProgram.genExtentParams
             , cTensorArgs = collectTensorArgs genProgram.genBody
             , cBody
@@ -81,14 +64,14 @@ lowerToCProgram genProgram = do
     tensorShapes = buildTensorShapeMap genProgram.genTensorDecls
 
 lowerStmts ::
-    Map.Map TensorName [ExtentParamName] ->
+    Map.Map TensorName [ParamName] ->
     [GenStmt] ->
     Either CAstError [CStmt]
 lowerStmts tensorShapes =
     traverse (lowerStmt tensorShapes)
 
 lowerStmt ::
-    Map.Map TensorName [ExtentParamName] ->
+    Map.Map TensorName [ParamName] ->
     GenStmt ->
     Either CAstError CStmt
 lowerStmt tensorShapes stmt =
@@ -105,7 +88,7 @@ lowerStmt tensorShapes stmt =
         GenReduction{} -> Left ErrCAstReductionNotSupported
 
 lowerExpr ::
-    Map.Map TensorName [ExtentParamName] ->
+    Map.Map TensorName [ParamName] ->
     GenExpr ->
     Either CAstError CExpr
 lowerExpr tensorShapes expr =
@@ -118,22 +101,22 @@ lowerExpr tensorShapes expr =
         GenMul lhs rhs -> CMul <$> lowerExpr tensorShapes lhs <*> lowerExpr tensorShapes rhs
 
 lowerTensorRef ::
-    Map.Map TensorName [ExtentParamName] ->
-    GenTensorRef ->
-    Either CAstError CTensorRef
+    Map.Map TensorName [ParamName] ->
+    TensorRef IterName ->
+    Either CAstError (TensorRef CExpr)
 lowerTensorRef tensorShapes ref = do
-    shapeParams <- lookupTensorShape tensorShapes ref.genTensor
-    flatIndex <- flattenRowMajor ref.genTensor (CVar <$> ref.genIndices) shapeParams
+    shapeParams <- lookupTensorShape tensorShapes ref.tensorName
+    flatIndex <- flattenRowMajor ref.tensorName (CVar <$> ref.tensorIndices) shapeParams
     pure
-        CTensorRef
-            { tensorName = fromString $ tensorNameToString ref.genTensor
+        TensorRef
+            { tensorName = ref.tensorName
             , tensorIndices = [flatIndex]
             }
 
 lookupTensorShape ::
-    Map.Map TensorName [ExtentParamName] ->
+    Map.Map TensorName [ParamName] ->
     TensorName ->
-    Either CAstError [ExtentParamName]
+    Either CAstError [ParamName]
 lookupTensorShape tensorShapes tensor =
     case Map.lookup tensor tensorShapes of
         Just shapeParams -> pure shapeParams
@@ -142,7 +125,7 @@ lookupTensorShape tensorShapes tensor =
 flattenRowMajor ::
     TensorName ->
     [CExpr] ->
-    [ExtentParamName] ->
+    [ParamName] ->
     Either CAstError CExpr
 flattenRowMajor tensor loweredIndices shapeParams
     | length loweredIndices /= length shapeParams =
@@ -160,19 +143,17 @@ flattenRowMajor tensor loweredIndices shapeParams
   where
     step acc (indexExpr, extentParam) =
         CAdd
-            (CMul acc (CVar (fromString (extentParamName extentParam))))
+            (CMul acc (CExtentVar extentParam))
             indexExpr
 
-    extentParamName (ExtentParamName name) = name
-
-buildTensorShapeMap :: [GenTensorDecl] -> Map.Map TensorName [ExtentParamName]
+buildTensorShapeMap :: [TensorDecl] -> Map.Map TensorName [ParamName]
 buildTensorShapeMap tensorDecls =
     Map.fromList
-        [ (tensorDecl.genTensor, tensorDecl.genShape)
+        [ (tensorDecl.tensor, tensorDecl.shape)
         | tensorDecl <- tensorDecls
         ]
 
-collectTensorArgs :: [GenStmt] -> [CTensorName]
+collectTensorArgs :: [GenStmt] -> [TensorName]
 collectTensorArgs stmts =
     uniqueStable $ concatMap collectStmtTensors stmts
   where
@@ -180,16 +161,14 @@ collectTensorArgs stmts =
         case stmt of
             GenFor{} -> collectTensorArgs stmt.genBody
             GenAssign{} ->
-                fromString (tensorNameToString stmt.genTarget.genTensor)
-                    : collectExprTensors stmt.genExpr
+                stmt.genTarget.tensorName : collectExprTensors stmt.genExpr
             GenReduction{} ->
-                fromString (tensorNameToString stmt.genTarget.genTensor)
-                    : collectExprTensors stmt.genExpr
+                stmt.genTarget.tensorName : collectExprTensors stmt.genExpr
 
     collectExprTensors expr =
         case expr of
             GenConst _ -> []
-            GenLoad ref -> [fromString $ tensorNameToString ref.genTensor]
+            GenLoad ref -> [ref.tensorName]
             GenAdd lhs rhs -> collectExprTensors lhs <> collectExprTensors rhs
             GenMul lhs rhs -> collectExprTensors lhs <> collectExprTensors rhs
 

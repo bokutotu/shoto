@@ -2,14 +2,14 @@
 
 module Codegen.CUDASpec (spec) where
 
-import           Codegen.CUDA.Ast    (CudaAstError (..), CudaKernelName (..),
-                                      CudaTensorName (..), lowerToCudaProgram)
+import           Codegen.CUDA.Ast    (CudaAstError (..), lowerToCudaProgram)
 import           Codegen.CUDA.Emit   (emitCudaProgram)
 import           Codegen.GenIR       (buildGenProgram)
 import           Data.Bifunctor      (first)
 import qualified Data.List.NonEmpty  as NE
 import           FrontendIR          (Axis (..), Expr (..), IxExpr (..),
                                       Program (..), Stmt (..), TensorDecl (..))
+import           IR.Name             (KernelName (..), TensorName (..))
 import           Polyhedral.Internal (AstExpression (..), AstOp (..),
                                       AstTree (..))
 import           Test.Hspec
@@ -66,10 +66,10 @@ spec = do
             cudaSource simpleCopy4DAst simpleCopy4DProgram
                 `shouldBe` Left (show (ErrCudaAstRankTooLarge 4))
 
-        it "constructs generated CUDA name wrappers from string literals" $ do
-            ("shoto_kernel_cuda" :: CudaKernelName)
-                `shouldBe` CudaKernelName "shoto_kernel_cuda"
-            ("B" :: CudaTensorName) `shouldBe` CudaTensorName "B"
+        it "constructs shared IR names from string literals" $ do
+            ("shoto_kernel_cuda" :: KernelName)
+                `shouldBe` KernelName "shoto_kernel_cuda"
+            ("B" :: TensorName) `shouldBe` TensorName "B"
 
 simpleCopyAst :: AstTree
 simpleCopyAst =
